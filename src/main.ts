@@ -27,6 +27,7 @@ import { battleMaps, worldNodes } from './data/maps';
 import { createRewardOptions } from './logic/rewards';
 import { chooseEnemyAttackTarget, chooseEnemyMoveDestination } from './logic/enemyAI';
 import { createEnemyUnit, createItem, createPlayerUnits } from './logic/factories';
+import { addExp, COMBAT_EXP, KILL_EXP, levelUpLog } from './logic/growth';
 import {
   addItemToFirstEmptySlot,
   allRepairTargets,
@@ -60,7 +61,6 @@ import type {
   Point,
   RestMode,
   RewardOption,
-  StatKey,
   Tile,
   Unit,
   Weapon,
@@ -249,58 +249,6 @@ function getPreviewRanges(unit: Unit, allowMove: boolean): { moveCells: Point[];
 }
 
 // -----------------------------------------------------------------------------
-// 成長・EXP
-// -----------------------------------------------------------------------------
-
-function weightedStat(growth: Record<StatKey, number>): StatKey {
-  const entries = Object.entries(growth) as Array<[StatKey, number]>;
-  const total = entries.reduce((sum, [, weight]) => sum + Math.max(0, weight), 0);
-  let roll = Math.random() * total;
-
-  for (const [key, weight] of entries) {
-    roll -= Math.max(0, weight);
-    if (roll <= 0) return key;
-  }
-
-  return 'str';
-}
-
-function addExp(unit: Unit, amount: number): void {
-  if (unit.team !== 'player' || unit.unavailable) return;
-
-  unit.exp += amount;
-  while (unit.exp >= 100) {
-    unit.exp -= 100;
-    levelUp(unit);
-  }
-}
-
-function levelUp(unit: Unit): void {
-  unit.level += 1;
-  unit.maxHp += 1;
-  unit.hp += 1;
-
-  const gains: Partial<Record<StatKey, number>> = {};
-  for (let i = 0; i < 3; i++) {
-    const stat = weightedStat(unit.growth);
-    unit[stat] += 1;
-    gains[stat] = (gains[stat] ?? 0) + 1;
-  }
-
-  const gainedStats = Object.entries(gains).map(([key, amount]) => ({
-    label: statLabels[key as StatKey],
-    amount: amount as number,
-  }));
-
-  log(`${unit.name} Lv${unit.level}: HP+1 / ${gainedStats.map((gain) => `${gain.label}+${gain.amount}`).join(' / ')}`);
-  levelUpPopups.push({
-    unitName: unit.name,
-    level: unit.level,
-    gains: [{ label: 'HP', amount: 1 }, ...gainedStats],
-  });
-}
-
-// -----------------------------------------------------------------------------
 // 戦闘実処理
 // -----------------------------------------------------------------------------
 
@@ -313,8 +261,22 @@ function consumeDurability(unit: Unit, amount: number): void {
   weapon.durability = Math.max(0, weapon.durability - amount);
 }
 
-/** 攻撃・反撃・追撃のどれでも、プレイヤー側が武器を振ればEXPが入る。 */
-function executeStrike(actor: Unit, target: Unit, kind: AttackKind): void {
+function grantExp(unit: Unit, amount: number): void {
+  const popups = addExp(unit, amount);
+  popups.forEach((popup) => {
+    log(levelUpLog(popup));
+    levelUpPopups.push(popup);
+  });
+}
+
+function grantCombatExpOnce(unit: Unit, combatExpGranted: Set<string>): void {
+  if (combatExpGranted.has(unit.id)) return;
+  combatExpGranted.add(unit.id);
+  grantExp(unit, COMBAT_EXP);
+}
+
+/** 1戦闘中にプレイヤー側が武器を振れば、基本EXPは1回だけ入る。 */
+function executeStrike(actor: Unit, target: Unit, kind: AttackKind, combatExpGranted: Set<string>): void {
   const spec = attackSpec(kind, actor, target);
 
   if (!canAffordStrike(actor, kind)) {
@@ -325,7 +287,7 @@ function executeStrike(actor: Unit, target: Unit, kind: AttackKind): void {
   consumeDurability(actor, spec.durabilityCost);
 
   if (actor.team === 'player') {
-    addExp(actor, 5);
+    grantCombatExpOnce(actor, combatExpGranted);
   }
 
   const hit = hitRate(actor, target);
@@ -344,29 +306,32 @@ function executeStrike(actor: Unit, target: Unit, kind: AttackKind): void {
 
   if (target.hp <= 0) {
     defeatUnit(target);
-    if (actor.team === 'player') addExp(actor, 30);
+    if (actor.team === 'player') {
+      grantExp(actor, KILL_EXP);
+    }
   }
 }
 
 function doCombat(intent: CombatIntent): void {
   const { attacker, defender, firstAttackKind } = intent;
+  const combatExpGranted = new Set<string>();
 
   if (attacker.team === 'player' && firstAttackKind === 'strong') {
     attacker.strongLeft -= 1;
   }
 
-  executeStrike(attacker, defender, firstAttackKind);
+  executeStrike(attacker, defender, firstAttackKind, combatExpGranted);
 
   if (defender.hp > 0 && attacker.hp > 0 && inRange(defender, attacker)) {
-    executeStrike(defender, attacker, 'normal');
+    executeStrike(defender, attacker, 'normal', combatExpGranted);
   }
 
   if (defender.hp > 0 && attacker.hp > 0 && inRange(defender, attacker) && canDouble(defender, attacker)) {
-    executeStrike(defender, attacker, 'normal');
+    executeStrike(defender, attacker, 'normal', combatExpGranted);
   }
 
   if (attacker.hp > 0 && defender.hp > 0 && canDouble(attacker, defender)) {
-    executeStrike(attacker, defender, 'normal');
+    executeStrike(attacker, defender, 'normal', combatExpGranted);
   }
 
   pendingCombat = null;

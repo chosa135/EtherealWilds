@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased
+
+- 戦闘後報酬の3候補に、同じ `itemMasterId` が複数並ばないようにした。
+- 抽選した報酬テーブルが重複回避で空になった場合、未表示の報酬候補全体から補完するようにした。
+- 成長処理を `src/logic/growth.ts` に分離した。
+- 戦闘EXPを、1戦闘につき基本EXP+10、撃破時に追加EXP+20へ変更した。
+
 ## Codex migration prep
 
 - READMEをCodex移行向けに再整理。
