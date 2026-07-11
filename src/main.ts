@@ -27,7 +27,7 @@ import { battleMaps, worldNodes } from './data/maps';
 import { createRewardOptions } from './logic/rewards';
 import { chooseEnemyAttackTarget, chooseEnemyMoveDestination } from './logic/enemyAI';
 import { createEnemyUnit, createItem, createPlayerUnits } from './logic/factories';
-import { addExp, COMBAT_EXP, KILL_EXP, levelUpLog } from './logic/growth';
+import { addExp, COMBAT_EXP, KILL_EXP, MAP_CLEAR_EXP, levelUpLog } from './logic/growth';
 import {
   addItemToFirstEmptySlot,
   allRepairTargets,
@@ -415,6 +415,8 @@ function advanceWorld(): void {
 function checkBattleEnd(): void {
   if (livingEnemies().length === 0) {
     log('敵全滅');
+    players.forEach((unit) => grantExp(unit, MAP_CLEAR_EXP));
+    log(`マップクリア：味方全員がEXP+${MAP_CLEAR_EXP}`);
     startRewardSelection();
     return;
   }
@@ -559,7 +561,7 @@ function restRevive(): void {
 function restTrain(): void {
   if (restActionsLeft <= 0) return;
 
-  for (const unit of livingPlayers()) addExp(unit, 30);
+  for (const unit of livingPlayers()) grantExp(unit, 30);
 
   consumeRestAction();
   log('鍛錬：出撃可能な全員がEXP+30');

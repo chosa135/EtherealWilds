@@ -3,6 +3,7 @@ import type { LevelUpPopup, StatKey, Unit } from '../types';
 
 export const COMBAT_EXP = 10;
 export const KILL_EXP = 20;
+export const MAP_CLEAR_EXP = 30;
 
 function weightedStat(growth: Record<StatKey, number>): StatKey {
   const entries = Object.entries(growth) as Array<[StatKey, number]>;
@@ -42,7 +43,7 @@ function levelUp(unit: Unit): LevelUpPopup {
 }
 
 export function addExp(unit: Unit, amount: number): LevelUpPopup[] {
-  if (unit.team !== 'player' || unit.unavailable) return [];
+  if (unit.team !== 'player') return [];
 
   const popups: LevelUpPopup[] = [];
   unit.exp += amount;

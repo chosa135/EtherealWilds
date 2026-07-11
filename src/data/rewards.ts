@@ -36,10 +36,10 @@ export const rewardTables: Record<`${RewardRarity}:${RewardCategory}`, RewardTab
     { itemMasterId: 'oldTome', weight: 10 },
   ],
   'rare:weapon': [
-    { itemMasterId: 'silverSword', weight: 10 },
-    { itemMasterId: 'silverLance', weight: 10 },
-    { itemMasterId: 'silverBow', weight: 10 },
-    { itemMasterId: 'silverTome', weight: 10 },
+    { itemMasterId: 'tamahaganeSword', weight: 10 },
+    { itemMasterId: 'tamahaganeLance', weight: 10 },
+    { itemMasterId: 'tamahaganeBow', weight: 10 },
+    { itemMasterId: 'tamahaganeTome', weight: 10 },
   ],
 
   'common:consumable': [
