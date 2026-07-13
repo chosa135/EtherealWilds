@@ -18,6 +18,7 @@ import {
   MAP_Y,
   MAX_STRONG_PER_MAP,
   PANEL_X,
+  PANEL_W,
   REST_ACTION_MAX,
   TILE,
   W,
@@ -70,6 +71,16 @@ import type {
   Unit,
   Weapon,
 } from './types';
+import {
+  drawBackdrop,
+  drawButton as renderButton,
+  drawSectionHeader,
+  drawSegmentedGauge,
+  drawText as renderText,
+  drawWindow,
+} from './ui/canvas';
+import { palette, typography } from './ui/theme';
+import { drawHpStatus, drawLogWindow as renderLogWindow } from './ui/widgets';
 
 // -----------------------------------------------------------------------------
 // Canvas
@@ -77,6 +88,16 @@ import type {
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
+
+const drawText = (
+  text: string,
+  x: number,
+  y: number,
+  color: string = palette.text,
+  size: number = typography.body,
+): void => {
+  renderText(ctx, text, x, y, color, size);
+};
 
 // -----------------------------------------------------------------------------
 // ゲーム状態
@@ -98,6 +119,7 @@ let pendingCombat: CombatIntent | null = null;
 let buttons: Button[] = [];
 let logs: string[] = [];
 let hover: Point | null = null;
+let pointer: Point | null = null;
 let runCleared = false;
 let levelUpPopups: LevelUpPopup[] = [];
 let restActionsLeft = REST_ACTION_MAX;
@@ -753,9 +775,9 @@ function buildButtons(): void {
   if (phase === 'player') {
     buttons.push({
       label: 'ターン終了',
-      x: PANEL_X + 310,
-      y: 78,
-      w: 128,
+      x: PANEL_X + 246,
+      y: 474,
+      w: 210,
       h: 34,
       action: endPlayerTurn,
       disabled: activePlayers().length === 0,
@@ -1010,7 +1032,22 @@ function isPopupOpen(): boolean {
 
 canvas.addEventListener('mousemove', (event) => {
   const rect = canvas.getBoundingClientRect();
-  hover = screenToCell(event.clientX - rect.left, event.clientY - rect.top);
+  pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  hover = screenToCell(pointer.x, pointer.y);
+  const overEnabledButton = buttons.some((button) =>
+    !button.disabled
+    && pointer!.x >= button.x
+    && pointer!.x <= button.x + button.w
+    && pointer!.y >= button.y
+    && pointer!.y <= button.y + button.h,
+  );
+  canvas.style.cursor = overEnabledButton ? 'pointer' : 'default';
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hover = null;
+  pointer = null;
+  canvas.style.cursor = 'default';
 });
 
 canvas.addEventListener('click', (event) => {
@@ -1081,8 +1118,13 @@ canvas.addEventListener('click', (event) => {
 // -----------------------------------------------------------------------------
 
 function draw(): void {
-  ctx.fillStyle = '#151916';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawBackdrop(ctx, canvas.width, canvas.height);
+
+  if (phase === 'player' || phase === 'enemy' || phase === 'result') {
+    drawWindow(ctx, MAP_X - 12, MAP_Y - 12, W * TILE + 24, H * TILE + 24, { inset: true });
+  } else {
+    drawWindow(ctx, 16, 16, 548, 404, { inset: true });
+  }
 
   if (phase === 'world') drawWorldMap();
   else if (phase === 'preparation') drawPreparationScreen();
@@ -1099,18 +1141,13 @@ function draw(): void {
   requestAnimationFrame(draw);
 }
 
-function drawText(text: string, x: number, y: number, color: string, size: number): void {
-  ctx.fillStyle = color;
-  ctx.font = `${size}px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
-  ctx.fillText(text, x, y);
-}
-
 function drawButton(button: Button): void {
-  ctx.fillStyle = button.disabled ? '#454545' : '#344d36';
-  ctx.fillRect(button.x, button.y, button.w, button.h);
-  ctx.strokeStyle = '#91b48e';
-  ctx.strokeRect(button.x, button.y, button.w, button.h);
-  drawText(button.label, button.x + 10, button.y + 23, button.disabled ? '#aaa' : '#fff', 14);
+  const hovered = !!pointer
+    && pointer.x >= button.x
+    && pointer.x <= button.x + button.w
+    && pointer.y >= button.y
+    && pointer.y <= button.y + button.h;
+  renderButton(ctx, button, hovered);
 }
 
 function rarityLabel(rarity: RewardOption['rarity']): string {
@@ -1120,9 +1157,9 @@ function rarityLabel(rarity: RewardOption['rarity']): string {
 }
 
 function rarityColor(rarity: RewardOption['rarity']): string {
-  if (rarity === 'common') return '#e8e8e8';
-  if (rarity === 'uncommon') return '#9bd4ff';
-  return '#fff36a';
+  if (rarity === 'common') return palette.text;
+  if (rarity === 'uncommon') return palette.blueBright;
+  return palette.goldBright;
 }
 
 // -----------------------------------------------------------------------------
@@ -1130,16 +1167,22 @@ function rarityColor(rarity: RewardOption['rarity']): string {
 // -----------------------------------------------------------------------------
 
 function drawWorldMap(): void {
-  drawText('WORLD MAP', MAP_X + 176, MAP_Y + 54, '#f0ead2', 24);
-  drawText('一本道の探索路。次のマスへ進んでください。', MAP_X + 84, MAP_Y + 92, '#cde6c7', 16);
+  drawText('禁足樹海 探索路', MAP_X + 166, MAP_Y + 52, palette.goldBright, typography.title);
+  drawText('枝道なき古道を辿り、樹海の深部を目指す。', MAP_X + 92, MAP_Y + 88, palette.textMuted, typography.body);
 
   const startX = MAP_X + 62;
   const y = MAP_Y + 220;
   const gap = 54;
 
   for (let i = 0; i < worldNodes.length - 1; i++) {
-    ctx.strokeStyle = '#7b806f';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = palette.woodDark;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(startX + i * gap + 18, y);
+    ctx.lineTo(startX + (i + 1) * gap - 18, y);
+    ctx.stroke();
+    ctx.strokeStyle = i < currentWorldIndex ? palette.gold : palette.metal;
+    ctx.lineWidth = i < currentWorldIndex ? 3 : 2;
     ctx.beginPath();
     ctx.moveTo(startX + i * gap + 18, y);
     ctx.lineTo(startX + (i + 1) * gap - 18, y);
@@ -1150,18 +1193,36 @@ function drawWorldMap(): void {
     const x = startX + index * gap;
     const radius = 18;
 
+    const isCurrent = index === currentWorldIndex;
+    if (isCurrent) {
+      ctx.beginPath();
+      ctx.arc(x, y, radius + 9, 0, Math.PI * 2);
+      ctx.strokeStyle = palette.blueBright;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y - radius - 18);
+      ctx.lineTo(x - 7, y - radius - 7);
+      ctx.lineTo(x + 7, y - radius - 7);
+      ctx.closePath();
+      ctx.fillStyle = palette.blueBright;
+      ctx.fill();
+    }
+
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = node.type === 'battle' ? '#b94242' : node.type === 'rest' ? '#3f8d64' : node.type === 'end' ? '#777' : '#4a5d7a';
+    ctx.fillStyle = node.type === 'battle' ? palette.red : node.type === 'rest' ? palette.green : node.type === 'end' ? palette.metal : palette.blue;
     ctx.fill();
 
-    ctx.strokeStyle = index === currentWorldIndex ? '#ff3b3b' : '#222';
-    ctx.lineWidth = index === currentWorldIndex ? 5 : 2;
+    ctx.strokeStyle = isCurrent ? palette.goldBright : index < currentWorldIndex ? palette.gold : palette.woodDark;
+    ctx.lineWidth = isCurrent ? 4 : 2;
     ctx.stroke();
 
     const label = node.type === 'battle' ? '戦' : node.type === 'rest' ? '休' : node.type === 'end' ? '終' : '始';
-    drawText(label, x - 8, y + 6, '#fff', 16);
+    drawText(label, x - 8, y + 6, palette.text, 16);
   });
+
+  drawText('現在地', startX + currentWorldIndex * gap - 23, y + 52, palette.blueBright, typography.small);
 }
 
 // -----------------------------------------------------------------------------
@@ -1175,23 +1236,32 @@ function drawBattleMap(): void {
       const sy = MAP_Y + y * TILE;
       const tile = tileAt(x, y);
 
-      ctx.fillStyle = tile === 'forest' ? '#29452d' : tile === 'wall' ? '#4a4a4a' : '#253326';
+      const alternating = (x + y) % 2 === 0;
+      ctx.fillStyle = tile === 'forest'
+        ? alternating ? palette.forest : palette.forestAlt
+        : tile === 'wall'
+          ? palette.wall
+          : alternating ? palette.plain : palette.plainAlt;
       ctx.fillRect(sx, sy, TILE, TILE);
-      ctx.strokeStyle = '#556052';
+      ctx.strokeStyle = palette.grid;
+      ctx.lineWidth = 1;
       ctx.strokeRect(sx, sy, TILE, TILE);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.strokeRect(sx + 3, sy + 3, TILE - 6, TILE - 6);
 
-      if (tile === 'forest') drawText('森', sx + 20, sy + 38, '#cfe8ca', 16);
-      if (tile === 'wall') drawText('岩', sx + 20, sy + 38, '#ddd', 16);
+      if (tile === 'forest') drawText('森', sx + 22, sy + 39, palette.greenBright, 15);
+      if (tile === 'wall') drawText('岩', sx + 22, sy + 39, palette.textMuted, 15);
     }
   }
 
   drawRangePreview();
 
   if (mode === 'targetAttack' || mode === 'targetStrong' || mode === 'confirmCombat') {
-    for (const target of targets) overlayCell(target.x, target.y, 'rgba(255,90,80,0.42)');
+    for (const target of targets) overlayCell(target.x, target.y, palette.target);
   }
 
-  if (hover) overlayCell(hover.x, hover.y, 'rgba(255,255,255,0.12)');
+  if (selected) drawCellOutline(selected.x, selected.y, palette.blueBright, 3);
+  if (hover) overlayCell(hover.x, hover.y, palette.hover);
 }
 
 function drawRangePreview(): void {
@@ -1211,13 +1281,21 @@ function drawRangePreview(): void {
       })()
     : getPreviewRanges(previewUnit, allowMove);
 
-  for (const point of ranges.attackCells) overlayCell(point.x, point.y, 'rgba(255,90,80,0.23)');
-  for (const point of ranges.moveCells) overlayCell(point.x, point.y, 'rgba(80,150,255,0.28)');
+  for (const point of ranges.attackCells) overlayCell(point.x, point.y, palette.attackRange);
+  for (const point of ranges.moveCells) overlayCell(point.x, point.y, palette.moveRange);
 }
 
 function overlayCell(x: number, y: number, color: string): void {
   ctx.fillStyle = color;
   ctx.fillRect(MAP_X + x * TILE, MAP_Y + y * TILE, TILE, TILE);
+}
+
+function drawCellOutline(x: number, y: number, color: string, width: number): void {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.strokeRect(MAP_X + x * TILE + 3, MAP_Y + y * TILE + 3, TILE - 6, TILE - 6);
+  ctx.restore();
 }
 
 function drawUnits(): void {
@@ -1226,21 +1304,28 @@ function drawUnits(): void {
     const sy = MAP_Y + unit.y * TILE + TILE / 2;
 
     ctx.beginPath();
-    ctx.arc(sx, sy, 22, 0, Math.PI * 2);
-    ctx.fillStyle = unit.team === 'player' ? '#7fb7ff' : '#ff7f7f';
+    ctx.arc(sx + 2, sy + 3, 24, 0, Math.PI * 2);
+    ctx.fillStyle = palette.shadow;
     ctx.fill();
 
-    ctx.strokeStyle = selected?.id === unit.id ? '#fff36a' : '#101010';
+    ctx.beginPath();
+    ctx.arc(sx, sy, 22, 0, Math.PI * 2);
+    ctx.fillStyle = unit.team === 'player' ? palette.blue : palette.red;
+    ctx.fill();
+    ctx.strokeStyle = selected?.id === unit.id ? palette.blueBright : palette.gold;
     ctx.lineWidth = selected?.id === unit.id ? 4 : 2;
     ctx.stroke();
 
-    drawText(unit.name.slice(0, 2), sx - 16, sy + 5, '#111', 14);
+    ctx.beginPath();
+    ctx.arc(sx, sy, 17, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    ctx.fillStyle = '#222';
-    ctx.fillRect(sx - 23, sy + 27, 46, 6);
-    ctx.fillStyle = '#66e083';
-    ctx.fillRect(sx - 23, sy + 27, 46 * (unit.hp / unit.maxHp), 6);
-    drawText(`${unit.hp}`, sx - 10, sy + 48, '#fff', 12);
+    drawText(unit.name.slice(0, 2), sx - 16, sy + 5, palette.text, 13);
+
+    drawSegmentedGauge(ctx, sx - 23, sy + 28, 46, 5, unit.hp, unit.maxHp, palette.greenBright, 5);
+    drawText(`${unit.hp}`, sx - 8, sy + 49, palette.text, 11);
 
     if (unit.acted && unit.team === 'player') {
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -1256,24 +1341,27 @@ function drawUnits(): void {
 // -----------------------------------------------------------------------------
 
 function drawRewardScreen(): void {
-  drawText('BATTLE REWARD', MAP_X + 155, MAP_Y + 62, '#f0ead2', 24);
-  drawText('3つの候補から1つ選び、味方か輸送隊へ送ります。', MAP_X + 64, MAP_Y + 104, '#cde6c7', 16);
+  drawText('戦利品の選定', MAP_X + 178, MAP_Y + 52, palette.goldBright, typography.title);
+  drawText('持ち帰る品をひとつ選び、探索隊か輸送隊へ。', MAP_X + 82, MAP_Y + 91, palette.textMuted, typography.body);
 
   if (!selectedReward) {
     rewardOptions.forEach((option, index) => {
       const x = MAP_X + 72;
       const y = MAP_Y + 154 + index * 58;
-      ctx.fillStyle = 'rgba(18, 24, 18, 0.88)';
+      ctx.fillStyle = palette.panelRaised;
       ctx.fillRect(x, y, 370, 42);
       ctx.strokeStyle = rarityColor(option.rarity);
-      ctx.strokeRect(x, y, 370, 42);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 0.5, y + 0.5, 369, 41);
+      ctx.fillStyle = rarityColor(option.rarity);
+      ctx.fillRect(x, y, 5, 42);
       drawText(`[${rarityLabel(option.rarity)}] ${option.name}`, x + 16, y + 27, rarityColor(option.rarity), 17);
     });
     return;
   }
 
   drawText(`選択中: [${rarityLabel(selectedReward.rarity)}] ${selectedReward.name}`, MAP_X + 98, MAP_Y + 162, rarityColor(selectedReward.rarity), 18);
-  drawText('右のボタンから受取先を選んでください。', MAP_X + 98, MAP_Y + 202, '#ffffff', 16);
+  drawText('右のボタンから受取先を選んでください。', MAP_X + 98, MAP_Y + 202, palette.text, 16);
 }
 
 function drawPreparationItem(item: InventorySlot, equippedItemId: string | null): string {
@@ -1286,18 +1374,18 @@ function drawPreparationItem(item: InventorySlot, equippedItemId: string | null)
 }
 
 function drawPreparationScreen(): void {
-  drawText('PREPARATION', MAP_X + 172, MAP_Y + 40, '#f0ead2', 24);
+  drawText('探索前の身支度', MAP_X + 164, MAP_Y + 40, palette.goldBright, typography.title);
 
-  drawText(`輸送隊 (${convoy.length})`, MAP_X + 14, MAP_Y + 78, '#fff36a', 18);
+  drawSectionHeader(ctx, `輸送隊 (${convoy.length})`, MAP_X + 14, MAP_Y + 78, 476);
   if (convoy.length === 0) {
-    drawText('保管中のアイテムはありません', MAP_X + 24, MAP_Y + 104, '#888', 14);
+    drawText('保管中のアイテムはありません', MAP_X + 24, MAP_Y + 108, palette.textDim, 14);
   } else {
     convoy.slice(0, 10).forEach((item, index) => {
       const x = MAP_X + 18 + (index % 2) * 250;
       const y = MAP_Y + 104 + Math.floor(index / 2) * 20;
-      drawText(`${index + 1}. ${drawPreparationItem(item, null)}`, x, y, item.category === 'weapon' ? '#d8e7ff' : '#cde6c7', 13);
+      drawText(`${index + 1}. ${drawPreparationItem(item, null)}`, x, y, item.category === 'weapon' ? palette.blueBright : palette.greenBright, 13);
     });
-    if (convoy.length > 10) drawText(`ほか ${convoy.length - 10}個`, MAP_X + 408, MAP_Y + 208, '#aaa', 12);
+    if (convoy.length > 10) drawText(`ほか ${convoy.length - 10}個`, MAP_X + 408, MAP_Y + 208, palette.textMuted, 12);
   }
 
   players.forEach((unit, index) => {
@@ -1305,54 +1393,62 @@ function drawPreparationScreen(): void {
     const y = MAP_Y + 226 + Math.floor(index / 2) * 94;
     const selectedMark = preparationUnit?.id === unit.id ? '▶ ' : '';
     const status = unit.unavailable ? ' [戦闘不能]' : '';
-    drawText(`${selectedMark}${unit.name}${status}`, x, y, unit.unavailable ? '#ffb0b0' : '#ffffff', 15);
+    ctx.fillStyle = preparationUnit?.id === unit.id ? 'rgba(79, 143, 201, 0.12)' : 'rgba(255,255,255,0.025)';
+    ctx.fillRect(x - 6, y - 18, 230, 84);
+    ctx.strokeStyle = preparationUnit?.id === unit.id ? palette.blueBright : palette.woodDark;
+    ctx.strokeRect(x - 6, y - 18, 230, 84);
+    drawText(`${selectedMark}${unit.name}${status}`, x, y, unit.unavailable ? palette.redBright : palette.goldBright, 15);
     inventorySlots(unit).forEach((item, slotIndex) => {
-      const color = !item ? '#777' : item.category === 'weapon' ? '#d8e7ff' : '#cde6c7';
+      const color = !item ? palette.textDim : item.category === 'weapon' ? palette.blueBright : palette.greenBright;
       drawText(`${slotIndex + 1}. ${drawPreparationItem(item, unit.equippedItemId)}`, x + 8, y + 18 + slotIndex * 16, color, 12);
     });
   });
 }
 
 function drawRestScreen(): void {
-  drawText('REST SPOT', MAP_X + 185, MAP_Y + 62, '#f0ead2', 24);
-  drawText('休息・復帰・鍛錬・修繕から2回行動できます。', MAP_X + 80, MAP_Y + 104, '#cde6c7', 16);
+  drawText('樹海の野営地', MAP_X + 174, MAP_Y + 52, palette.goldBright, typography.title);
+  drawText('火を囲み、次の行軍に備える。行動は二度まで。', MAP_X + 80, MAP_Y + 92, palette.textMuted, typography.body);
 
   const living = livingPlayers().length;
   const down = players.filter((unit) => unit.unavailable).length;
-  drawText(`出撃可能: ${living}人`, MAP_X + 150, MAP_Y + 168, '#fff', 18);
-  drawText(`戦闘不能: ${down}人`, MAP_X + 150, MAP_Y + 202, down > 0 ? '#ffb0b0' : '#fff', 18);
+  drawWindow(ctx, MAP_X + 112, MAP_Y + 132, 292, 104, { inset: true });
+  drawText(`出撃可能　${living}人`, MAP_X + 146, MAP_Y + 172, palette.greenBright, 18);
+  drawText(`戦闘不能　${down}人`, MAP_X + 146, MAP_Y + 207, down > 0 ? palette.redBright : palette.textMuted, 18);
 }
 
 function drawPanel(): void {
-  ctx.fillStyle = '#20271f';
-  ctx.fillRect(PANEL_X, 0, 550, canvas.height);
-
-  drawText('Ethereal Wilds Prototype', PANEL_X + 16, 32, '#f0ead2', 22);
-  drawText(`フェイズ: ${phaseLabel()}`, PANEL_X + 16, 62, '#ffffff', 16);
+  drawWindow(ctx, PANEL_X + 4, 8, PANEL_W - 8, canvas.height - 16);
+  ctx.fillStyle = palette.brown;
+  ctx.fillRect(PANEL_X + 12, 16, PANEL_W - 24, 54);
+  ctx.fillStyle = palette.gold;
+  ctx.fillRect(PANEL_X + 12, 68, PANEL_W - 24, 2);
+  drawText('ETHEREAL WILDS', PANEL_X + 24, 43, palette.goldBright, 20);
+  drawText('禁足樹海探索録', PANEL_X + 25, 62, palette.textMuted, 12);
+  drawText(phaseLabel(), PANEL_X + 410, 49, palette.text, 14);
 
   if (phase === 'player' || phase === 'enemy') drawBattleInfoPanel();
 
   if (phase === 'reward') {
-    drawText(selectedReward ? `${selectedReward.name}の受取先を選択` : '報酬を1つ選択', PANEL_X + 16, 106, '#fff36a', 18);
+    drawText(selectedReward ? `${selectedReward.name}の受取先を選択` : '報酬を1つ選択', PANEL_X + 20, 112, palette.goldBright, 18);
   }
 
   if (phase === 'rest') {
-    drawText(`行動残り: ${restActionsLeft}/${REST_ACTION_MAX}`, PANEL_X + 16, 106, '#fff36a', 18);
-    if (restMode === 'repairTarget') drawText('修繕する武器を選択', PANEL_X + 16, 134, '#d8e7ff', 16);
+    drawText(`行動残り: ${restActionsLeft}/${REST_ACTION_MAX}`, PANEL_X + 20, 112, palette.goldBright, 18);
+    if (restMode === 'repairTarget') drawText('修繕する武器を選択', PANEL_X + 20, 140, palette.blueBright, 16);
   }
 
   if (phase === 'preparation') {
     if (preparationUnit) {
-      drawText(`${preparationUnit.name} / ${preparationUnit.cls}`, PANEL_X + 16, 102, '#fff36a', 20);
-      drawText(`HP ${preparationUnit.hp}/${preparationUnit.maxHp}  輸送隊 ${convoy.length}個`, PANEL_X + 16, 130, '#ffffff', 16);
-      drawText(`操作: ${preparationModeLabel()}`, PANEL_X + 16, 156, '#cde6c7', 15);
+      drawText(`${preparationUnit.name} / ${preparationUnit.cls}`, PANEL_X + 20, 106, palette.goldBright, 20);
+      drawHpStatus(ctx, preparationUnit.hp, preparationUnit.maxHp, PANEL_X + 20, 136, 280);
+      drawText(`輸送隊 ${convoy.length}個　操作: ${preparationModeLabel()}`, PANEL_X + 20, 166, palette.textMuted, 14);
     } else {
-      drawText('管理するユニットを選んでください。', PANEL_X + 16, 106, '#cde6c7', 16);
-      drawText(`輸送隊: ${convoy.length}個`, PANEL_X + 16, 136, '#ffffff', 16);
+      drawText('管理するユニットを選んでください。', PANEL_X + 20, 112, palette.textMuted, 16);
+      drawText(`輸送隊: ${convoy.length}個`, PANEL_X + 20, 142, palette.text, 16);
     }
   }
 
-  if (phase === 'world') drawText('次のマスへ進んでください。', PANEL_X + 16, 106, '#cde6c7', 16);
+  if (phase === 'world') drawText('次のマスへ進んでください。', PANEL_X + 20, 112, palette.textMuted, 16);
 
   drawCombatPreviewPanel();
   buildButtons();
@@ -1360,32 +1456,34 @@ function drawPanel(): void {
 
   if (phase === 'result') {
     const message = runCleared ? '浅層探索 完了' : '探索隊は撤退した';
-    drawText(message, PANEL_X + 16, 260, runCleared ? '#a9ffb0' : '#ffb0b0', 24);
+    drawText(message, PANEL_X + 20, 260, runCleared ? palette.greenBright : palette.redBright, 24);
   }
 }
 
 function drawBattleInfoPanel(): void {
   const info = selected ?? (hover ? unitAt(hover.x, hover.y) ?? null : null);
-  let y = 92;
+  let y = 102;
 
   if (!info) {
-    drawText('自軍ユニットを選択してください', PANEL_X + 16, y + 32, '#ddd', 16);
+    drawText('ユニットにカーソルを合わせて情報を確認', PANEL_X + 20, y + 32, palette.textMuted, 16);
     return;
   }
 
-  drawText(`${info.name} / ${info.cls}`, PANEL_X + 16, y, '#fff36a', 20);
+  drawText(`${info.name} / ${info.cls}`, PANEL_X + 20, y, palette.goldBright, 20);
   y += 28;
-  drawText(`Lv${info.level} EXP${info.exp}  HP ${info.hp}/${info.maxHp}`, PANEL_X + 16, y, '#fff', 16);
-  y += 24;
+  drawText(`Lv ${info.level}　EXP ${info.exp}`, PANEL_X + 20, y, palette.text, 15);
+  y += 26;
+  drawHpStatus(ctx, info.hp, info.maxHp, PANEL_X + 20, y, 230);
+  y += 30;
   drawText(
     `力${effectiveStat(info, 'str')} 魔${effectiveStat(info, 'mag')} 技${effectiveStat(info, 'skl')} 速${effectiveStat(info, 'spd')}`,
-    PANEL_X + 16,
+    PANEL_X + 20,
     y,
-    '#fff',
+    palette.text,
     16,
   );
   y += 24;
-  drawText(`守${effectiveStat(info, 'def')} 魔防${effectiveStat(info, 'res')} 移${info.move}`, PANEL_X + 16, y, '#fff', 16);
+  drawText(`守${effectiveStat(info, 'def')} 魔防${effectiveStat(info, 'res')} 移${info.move}`, PANEL_X + 20, y, palette.text, 16);
   y += 24;
 
   const playerClass = getPlayerClass(info);
@@ -1393,34 +1491,35 @@ function drawBattleInfoPanel(): void {
     const modifier = Object.entries(playerClass.statModifiers)
       .map(([stat, amount]) => `${statLabels[stat as keyof typeof statLabels]}+${amount}`)
       .join(' ');
-    drawText(`職業補正: ${modifier}`, PANEL_X + 270, 96, '#d8e7ff', 14);
-    drawText(`スキル「${playerClass.skillName}」`, PANEL_X + 270, 120, '#fff36a', 15);
-    drawText(playerClass.skillDescription, PANEL_X + 270, 142, '#cde6c7', 13);
+    drawText(`職業補正　${modifier}`, PANEL_X + 280, 102, palette.blueBright, 14);
+    drawText(`技能「${playerClass.skillName}」`, PANEL_X + 280, 128, palette.goldBright, 15);
+    drawText(playerClass.skillDescription, PANEL_X + 280, 150, palette.textMuted, 13);
   }
 
   const weapon = getEquippedWeapon(info);
   if (weapon) {
-    drawText(`${weapon.name} 威力${weapon.might} 命中${weapon.hit} 射程${weapon.rangeMin}-${weapon.rangeMax}`, PANEL_X + 16, y, '#d8e7ff', 16);
+    drawText(`${weapon.name}　威力${weapon.might} 命中${weapon.hit}`, PANEL_X + 20, y, palette.blueBright, 15);
     y += 24;
-    drawText(`耐久 ${weapon.durability}/${weapon.maxDurability}  強撃 ${info.strongLeft}/${MAX_STRONG_PER_MAP}`, PANEL_X + 16, y, '#d8e7ff', 16);
+    drawText(`射程${weapon.rangeMin}-${weapon.rangeMax}　耐久${weapon.durability}/${weapon.maxDurability}　強撃${info.strongLeft}/${MAX_STRONG_PER_MAP}`, PANEL_X + 20, y, palette.textMuted, 14);
   } else {
-    drawText(`武器未装備  強撃 ${info.strongLeft}/${MAX_STRONG_PER_MAP}`, PANEL_X + 16, y, '#ffb0b0', 16);
+    drawText(`武器未装備　強撃 ${info.strongLeft}/${MAX_STRONG_PER_MAP}`, PANEL_X + 20, y, palette.redBright, 16);
   }
 
-  y += 30;
-  drawText('所持品', PANEL_X + 16, y, '#f0ead2', 16);
-  y += 22;
+  const inventoryX = PANEL_X + 280;
+  let inventoryY = 184;
+  drawSectionHeader(ctx, '所持品', inventoryX, inventoryY, 226);
+  inventoryY += 28;
 
   inventorySlots(info).forEach((item: InventorySlot, index: number) => {
     if (!item) {
-      drawText(`${index + 1}. -`, PANEL_X + 24, y, '#888', 14);
+      drawText(`${index + 1}. －`, inventoryX + 8, inventoryY, palette.textDim, 13);
     } else if (item.category === 'weapon') {
       const mark = item.id === info.equippedItemId ? '★' : '　';
-      drawText(`${index + 1}. ${mark}${item.name} ${item.durability}/${item.maxDurability}`, PANEL_X + 24, y, '#d8e7ff', 14);
+      drawText(`${index + 1}. ${mark}${item.name} ${item.durability}/${item.maxDurability}`, inventoryX + 8, inventoryY, palette.blueBright, 13);
     } else {
-      drawText(`${index + 1}. ${item.name} x${item.uses}`, PANEL_X + 24, y, '#cde6c7', 14);
+      drawText(`${index + 1}. ${item.name} x${item.uses}`, inventoryX + 8, inventoryY, palette.greenBright, 13);
     }
-    y += 20;
+    inventoryY += 20;
   });
 }
 
@@ -1430,12 +1529,9 @@ function drawCombatPreviewPanel(): void {
   const preview = buildCombatPreview(pendingCombat);
   let y = 252;
 
-  ctx.fillStyle = 'rgba(10, 14, 12, 0.55)';
-  ctx.fillRect(PANEL_X + 260, y - 24, 266, 188);
-  ctx.strokeStyle = '#91b48e';
-  ctx.strokeRect(PANEL_X + 260, y - 24, 266, 188);
+  drawWindow(ctx, PANEL_X + 260, y - 24, 266, 188, { active: true, inset: true });
 
-  drawText('戦闘予測', PANEL_X + 274, y, '#fff36a', 18);
+  drawText('戦闘予測', PANEL_X + 278, y + 2, palette.goldBright, 18);
   y += 26;
 
   for (const line of preview.lines) {
@@ -1444,33 +1540,22 @@ function drawCombatPreviewPanel(): void {
       ? `${line.label}: ${line.damage} dmg / 命中${line.hit}%${cost}`
       : `${line.label}: ${line.note}`;
 
-    drawText(text, PANEL_X + 274, y, line.available ? '#fff' : '#aaa', 13);
+    drawText(text, PANEL_X + 278, y, line.available ? palette.text : palette.textDim, 13);
     y += 23;
   }
 
-  drawText(`最大耐久消費: ${preview.totalDurabilityCost}`, PANEL_X + 274, y + 4, '#d8e7ff', 13);
+  drawText(`最大耐久消費: ${preview.totalDurabilityCost}`, PANEL_X + 278, y + 4, palette.blueBright, 13);
 }
 
 function drawLogWindow(): void {
-  ctx.fillStyle = '#182018';
-  ctx.fillRect(LOG_X, LOG_Y, LOG_W, LOG_H);
-  ctx.strokeStyle = '#91b48e';
-  ctx.strokeRect(LOG_X, LOG_Y, LOG_W, LOG_H);
-
-  drawText('ログ', LOG_X + 14, LOG_Y + 26, '#f0ead2', 18);
-
-  let y = LOG_Y + 54;
-  for (const message of logs) {
-    drawText(message, LOG_X + 14, y, '#e8e8e8', 14);
-    y += 20;
-  }
+  renderLogWindow(ctx, logs, LOG_X, LOG_Y, LOG_W, LOG_H);
 }
 
 function drawLevelUpPopup(): void {
   const popup = levelUpPopups[0];
   if (!popup) return;
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.68)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const w = 380;
@@ -1478,23 +1563,19 @@ function drawLevelUpPopup(): void {
   const x = MAP_X + (W * TILE - w) / 2;
   const y = MAP_Y + 82;
 
-  ctx.fillStyle = 'rgba(18, 24, 18, 0.96)';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = '#f0ead2';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
+  drawWindow(ctx, x, y, w, h, { active: true });
 
-  drawText('LEVEL UP', x + 126, y + 38, '#fff36a', 24);
-  drawText(`${popup.unitName}  Lv ${popup.level}`, x + 34, y + 72, '#ffffff', 18);
+  drawText('LEVEL UP', x + 126, y + 42, palette.goldBright, 24);
+  drawText(`${popup.unitName}　Lv ${popup.level}`, x + 34, y + 76, palette.text, 18);
 
   popup.gains.forEach((gain, index) => {
     const gx = x + 46 + (index % 3) * 108;
     const gy = y + 110 + Math.floor(index / 3) * 30;
-    drawText(`${gain.label} +${gain.amount}`, gx, gy, '#cde6c7', 17);
+    drawText(`${gain.label} +${gain.amount}`, gx, gy, palette.greenBright, 17);
   });
 
   const remaining = levelUpPopups.length - 1;
-  drawText(remaining > 0 ? `クリックで次へ（残り ${remaining}）` : 'クリックで閉じる', x + 118, y + h - 18, '#e8e8e8', 14);
+  drawText(remaining > 0 ? `クリックで次へ（残り ${remaining}）` : 'クリックで閉じる', x + 112, y + h - 18, palette.textMuted, 14);
 }
 
 function phaseLabel(): string {
