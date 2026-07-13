@@ -1,5 +1,10 @@
-import { INVENTORY_SIZE } from '../constants';
-import type { Consumable, InventorySlot, Unit, Weapon } from '../types';
+import { INVENTORY_SIZE, statLabels } from '../constants';
+import type { Consumable, InventorySlot, Item, Unit, Weapon } from '../types';
+
+export type ConsumableUseResult = {
+  used: boolean;
+  message: string;
+};
 
 export function inventorySlots(unit: Unit): InventorySlot[] {
   while (unit.inventory.length < INVENTORY_SIZE) unit.inventory.push(null);
@@ -49,4 +54,51 @@ export function addItemToFirstEmptySlot(unit: Unit, item: InventorySlot): boolea
   if (slotIndex < 0) return false;
   unit.inventory[slotIndex] = item;
   return true;
+}
+
+function equipFirstAvailableWeapon(unit: Unit): void {
+  const weapon = inventorySlots(unit).find(isWeapon);
+  unit.equippedItemId = weapon?.id ?? null;
+}
+
+export function depositItem(unit: Unit, slotIndex: number, convoy: Item[]): Item | null {
+  const item = inventorySlots(unit)[slotIndex];
+  if (!item) return null;
+
+  unit.inventory[slotIndex] = null;
+  convoy.push(item);
+
+  if (unit.equippedItemId === item.id) equipFirstAvailableWeapon(unit);
+  return item;
+}
+
+export function withdrawItem(convoy: Item[], convoyIndex: number, unit: Unit): Item | null {
+  const item = convoy[convoyIndex];
+  if (!item || !addItemToFirstEmptySlot(unit, item)) return null;
+
+  convoy.splice(convoyIndex, 1);
+  return item;
+}
+
+export function useInventoryConsumable(unit: Unit, slotIndex: number): ConsumableUseResult {
+  const item = inventorySlots(unit)[slotIndex];
+  if (!isConsumable(item)) return { used: false, message: '使用できる道具ではありません' };
+
+  if (item.effect === 'heal') {
+    if (unit.unavailable) return { used: false, message: '戦闘不能中は回復アイテムを使用できません' };
+    if (unit.hp >= unit.maxHp) return { used: false, message: 'HPは満タン' };
+
+    const before = unit.hp;
+    unit.hp = Math.min(unit.maxHp, unit.hp + item.amount);
+    item.uses -= 1;
+    if (item.uses <= 0) unit.inventory[slotIndex] = null;
+    return { used: true, message: `${unit.name}は${item.name}でHPを${unit.hp - before}回復した` };
+  }
+
+  if (!item.stat) return { used: false, message: '使用できる道具ではありません' };
+
+  unit[item.stat] += item.amount;
+  item.uses -= 1;
+  if (item.uses <= 0) unit.inventory[slotIndex] = null;
+  return { used: true, message: `${unit.name}は${item.name}で${statLabels[item.stat]}+${item.amount}` };
 }

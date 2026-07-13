@@ -42,6 +42,7 @@ npm run dev
 4. 戦闘終了後に報酬画面が出る。
 5. 報酬をユニットに渡してワールドマップへ戻れる。
 6. 休憩所で休息・復帰・鍛錬・修繕が選べる。
+7. ワールドマップの身支度で、輸送隊への預け入れ・取り出し・装備変更・道具使用ができる。
 
 ## よくある作業と編集先
 
@@ -51,6 +52,7 @@ npm run dev
 | 消費アイテム追加 | `src/data/items.ts`, `src/logic/inventory.ts` |
 | 報酬確率調整 | `src/data/rewards.ts`, `src/logic/rewards.ts` |
 | 敵ステータス調整 | `src/data/enemies.ts`, `src/data/maps.ts` |
+| 職業追加・調整 | `src/data/classes.ts`, `src/logic/classes.ts`, `src/logic/combat.ts`, `src/logic/growth.ts` |
 | マップ追加 | `src/data/maps.ts` |
 | 戦闘式変更 | `src/logic/combat.ts`, `docs/DESIGN.md` |
 | 敵AI変更 | `src/logic/enemyAI.ts` |
@@ -98,4 +100,4 @@ npm run build を通してください。
 - `main.ts` にはまだ進行管理・入力・描画が多く残っています。新規ロジックを追加する場合は、可能な限り `src/logic/` に切り出してください。
 - 戦闘中に能力強化アイテムを使える仕様です。将来的にはワールドマップまたは準備画面で使う仕様に移す候補です。
 - 報酬受け取り時、所持品が満杯の場合の入れ替えUIはありません。
-- 輸送隊はありません。
+- 輸送隊はワールドマップの身支度でのみ利用できます。戦闘中から参照・操作する導線は追加しないでください。

@@ -28,15 +28,18 @@ import { createRewardOptions } from './logic/rewards';
 import { chooseEnemyAttackTarget, chooseEnemyMoveDestination } from './logic/enemyAI';
 import { createEnemyUnit, createItem, createPlayerUnits } from './logic/factories';
 import { addExp, COMBAT_EXP, KILL_EXP, MAP_CLEAR_EXP, levelUpLog } from './logic/growth';
+import { effectiveStat, getPlayerClass } from './logic/classes';
 import {
   addItemToFirstEmptySlot,
   allRepairTargets,
+  depositItem,
   equipWeapon,
   getEquippedWeapon,
-  getFirstUsablePotion,
   inventorySlots,
   isConsumable,
   isWeapon,
+  useInventoryConsumable,
+  withdrawItem,
 } from './logic/inventory';
 import {
   attackSpec,
@@ -59,9 +62,11 @@ import type {
   Mode,
   Phase,
   Point,
+  PreparationMode,
   RestMode,
   RewardOption,
   Tile,
+  Item,
   Unit,
   Weapon,
 } from './types';
@@ -99,6 +104,10 @@ let restActionsLeft = REST_ACTION_MAX;
 let restMode: RestMode = 'main';
 let rewardOptions: RewardOption[] = [];
 let selectedReward: RewardOption | null = null;
+let convoy: Item[] = [];
+let preparationMode: PreparationMode = 'selectUnit';
+let preparationUnit: Unit | null = null;
+let convoyPage = 0;
 
 // -----------------------------------------------------------------------------
 // 汎用処理
@@ -276,7 +285,13 @@ function grantCombatExpOnce(unit: Unit, combatExpGranted: Set<string>): void {
 }
 
 /** 1戦闘中にプレイヤー側が武器を振れば、基本EXPは1回だけ入る。 */
-function executeStrike(actor: Unit, target: Unit, kind: AttackKind, combatExpGranted: Set<string>): void {
+function executeStrike(
+  actor: Unit,
+  target: Unit,
+  kind: AttackKind,
+  combatExpGranted: Set<string>,
+  combatInitiatorId: string,
+): void {
   const spec = attackSpec(kind, actor, target);
 
   if (!canAffordStrike(actor, kind)) {
@@ -290,13 +305,13 @@ function executeStrike(actor: Unit, target: Unit, kind: AttackKind, combatExpGra
     grantCombatExpOnce(actor, combatExpGranted);
   }
 
-  const hit = hitRate(actor, target);
+  const hit = hitRate(actor, target, combatInitiatorId);
   if (!roll2RN(hit)) {
     log(`${actor.name}の${spec.label}: ${target.name}に外れた（命中${hit}%）`);
     return;
   }
 
-  const damage = damageFor(actor, target, kind);
+  const damage = damageFor(actor, target, kind, combatInitiatorId);
   target.hp = Math.max(0, target.hp - damage);
 
   const details: string[] = [];
@@ -315,23 +330,24 @@ function executeStrike(actor: Unit, target: Unit, kind: AttackKind, combatExpGra
 function doCombat(intent: CombatIntent): void {
   const { attacker, defender, firstAttackKind } = intent;
   const combatExpGranted = new Set<string>();
+  const combatInitiatorId = attacker.id;
 
   if (attacker.team === 'player' && firstAttackKind === 'strong') {
     attacker.strongLeft -= 1;
   }
 
-  executeStrike(attacker, defender, firstAttackKind, combatExpGranted);
+  executeStrike(attacker, defender, firstAttackKind, combatExpGranted, combatInitiatorId);
 
   if (defender.hp > 0 && attacker.hp > 0 && inRange(defender, attacker)) {
-    executeStrike(defender, attacker, 'normal', combatExpGranted);
+    executeStrike(defender, attacker, 'normal', combatExpGranted, combatInitiatorId);
   }
 
   if (defender.hp > 0 && attacker.hp > 0 && inRange(defender, attacker) && canDouble(defender, attacker)) {
-    executeStrike(defender, attacker, 'normal', combatExpGranted);
+    executeStrike(defender, attacker, 'normal', combatExpGranted, combatInitiatorId);
   }
 
   if (attacker.hp > 0 && defender.hp > 0 && canDouble(attacker, defender)) {
-    executeStrike(attacker, defender, 'normal', combatExpGranted);
+    executeStrike(attacker, defender, 'normal', combatExpGranted, combatInitiatorId);
   }
 
   pendingCombat = null;
@@ -396,6 +412,23 @@ function returnToWorld(): void {
   clearSelection();
 }
 
+function startPreparation(): void {
+  phase = 'preparation';
+  mode = 'idle';
+  preparationMode = 'selectUnit';
+  preparationUnit = null;
+  convoyPage = 0;
+  clearSelection();
+  log('身支度を始めた');
+}
+
+function finishPreparation(): void {
+  preparationMode = 'selectUnit';
+  preparationUnit = null;
+  returnToWorld();
+  log('身支度を終えた');
+}
+
 function advanceWorld(): void {
   if (currentWorldIndex < worldNodes.length - 1) currentWorldIndex += 1;
 
@@ -457,6 +490,19 @@ function assignRewardToUnit(unit: Unit): void {
   returnToWorld();
 }
 
+function assignRewardToConvoy(): void {
+  if (!selectedReward) return;
+
+  const item = createItem({ category: selectedReward.category, masterId: selectedReward.itemMasterId });
+  if (!item) return;
+
+  convoy.push(item);
+  log(`${selectedReward.name}を輸送隊へ送った`);
+  rewardOptions = [];
+  selectedReward = null;
+  returnToWorld();
+}
+
 function skipReward(): void {
   rewardOptions = [];
   selectedReward = null;
@@ -509,10 +555,10 @@ function runEnemyTurn(): void {
       doCombat({ attacker: enemy, defender: target, firstAttackKind: 'normal' });
     }
 
-    if (phase === 'result' || phase === 'world') return;
+    if (phase !== 'enemy') return;
   }
 
-  if (phase !== 'result' && phase !== 'world') {
+  if (phase === 'enemy') {
     livingPlayers().forEach((unit) => {
       unit.acted = false;
       // 強撃回数はターンでは回復しない。マップ開始時のみ回復。
@@ -612,46 +658,33 @@ function returnToMenu(): void {
   mode = 'menu';
 }
 
-function usePotion(unit: Unit): void {
-  const potion = getFirstUsablePotion(unit);
-  if (!potion) {
-    log('傷薬がない');
-    return;
-  }
-
-  if (unit.hp >= unit.maxHp) {
-    log('HPは満タン');
-    return;
-  }
-
-  potion.item.uses -= 1;
-  unit.hp = Math.min(unit.maxHp, unit.hp + potion.item.amount);
-  if (potion.item.uses <= 0) unit.inventory[potion.slotIndex] = null;
-
-  log(`${unit.name}は傷薬で回復した`);
+function useConsumable(unit: Unit, slotIndex: number): void {
+  const result = useInventoryConsumable(unit, slotIndex);
+  log(result.message);
+  if (!result.used) return;
   finishAction();
 }
 
-function useConsumable(unit: Unit, slotIndex: number): void {
-  const item = inventorySlots(unit)[slotIndex];
-  if (!isConsumable(item)) return;
+function usePreparationConsumable(unit: Unit, slotIndex: number): void {
+  const result = useInventoryConsumable(unit, slotIndex);
+  log(result.message);
+}
 
-  if (item.effect === 'heal') {
-    if (unit.hp >= unit.maxHp) {
-      log('HPは満タン');
-      return;
-    }
+function depositPreparationItem(unit: Unit, slotIndex: number): void {
+  const item = depositItem(unit, slotIndex, convoy);
+  if (item) log(`${unit.name}は${item.name}を輸送隊へ預けた`);
+}
 
-    unit.hp = Math.min(unit.maxHp, unit.hp + item.amount);
-    log(`${unit.name}は${item.name}でHPを${item.amount}回復した`);
-  } else if (item.effect === 'statBoost' && item.stat) {
-    unit[item.stat] += item.amount;
-    log(`${unit.name}は${item.name}で${statLabels[item.stat]}+${item.amount}`);
+function withdrawPreparationItem(unit: Unit, convoyIndex: number): void {
+  const item = withdrawItem(convoy, convoyIndex, unit);
+  if (!item) {
+    log(`${unit.name}の所持品に空きがありません`);
+    return;
   }
 
-  item.uses -= 1;
-  if (item.uses <= 0) unit.inventory[slotIndex] = null;
-  finishAction();
+  log(`${unit.name}は輸送隊から${item.name}を取り出した`);
+  const pageCount = Math.max(1, Math.ceil(convoy.length / 8));
+  convoyPage = Math.min(convoyPage, pageCount - 1);
 }
 
 function selectTargets(strong: boolean): void {
@@ -675,6 +708,10 @@ function resetRun(): void {
   restMode = 'main';
   rewardOptions = [];
   selectedReward = null;
+  convoy = [];
+  preparationMode = 'selectUnit';
+  preparationUnit = null;
+  convoyPage = 0;
   logs = [];
   clearSelection();
   log('探索準備完了');
@@ -697,6 +734,19 @@ function buildButtons(): void {
       action: advanceWorld,
       disabled: currentWorldIndex >= worldNodes.length - 1,
     });
+    buttons.push({
+      label: '身支度',
+      x: PANEL_X + 16,
+      y: 224,
+      w: 180,
+      h: 36,
+      action: startPreparation,
+    });
+    return;
+  }
+
+  if (phase === 'preparation') {
+    buildPreparationButtons();
     return;
   }
 
@@ -815,8 +865,101 @@ function buildRewardButtons(): void {
     const emptyCount = inventorySlots(unit).filter((slot) => slot === null).length;
     add(`${unit.name}に持たせる（空き${emptyCount}）`, () => assignRewardToUnit(unit), emptyCount <= 0);
   }
+  add('輸送隊へ送る', assignRewardToConvoy);
   add('報酬を選び直す', () => { selectedReward = null; });
   add('受け取らずに進む', skipReward);
+}
+
+function itemButtonLabel(item: Item): string {
+  if (item.category === 'weapon') return `${item.name} ${item.durability}/${item.maxDurability}`;
+  return `${item.name} x${item.uses}`;
+}
+
+function buildPreparationButtons(): void {
+  let y = 190;
+  const add = (label: string, action: () => void, disabled = false): void => {
+    buttons.push({ label, x: PANEL_X + 16, y, w: 330, h: 34, action, disabled });
+    y += 39;
+  };
+
+  if (preparationMode === 'selectUnit') {
+    for (const unit of players) {
+      const emptyCount = inventorySlots(unit).filter((slot) => slot === null).length;
+      add(`${unit.name}（空き${emptyCount}）`, () => {
+        preparationUnit = unit;
+        preparationMode = 'unitMenu';
+      });
+    }
+    add('身支度を終える', finishPreparation);
+    return;
+  }
+
+  if (!preparationUnit) {
+    preparationMode = 'selectUnit';
+    return;
+  }
+
+  const unit = preparationUnit;
+
+  if (preparationMode === 'unitMenu') {
+    add('預ける', () => { preparationMode = 'deposit'; });
+    add(`取り出す（輸送隊 ${convoy.length}個）`, () => {
+      convoyPage = 0;
+      preparationMode = 'withdraw';
+    }, convoy.length === 0 || inventorySlots(unit).every((slot) => slot !== null));
+    add('装備変更', () => { preparationMode = 'equip'; }, !inventorySlots(unit).some(isWeapon));
+    add('道具を使う', () => { preparationMode = 'item'; }, !inventorySlots(unit).some(isConsumable));
+    add('別のユニットを選ぶ', () => {
+      preparationUnit = null;
+      preparationMode = 'selectUnit';
+    });
+    add('身支度を終える', finishPreparation);
+    return;
+  }
+
+  if (preparationMode === 'deposit') {
+    inventorySlots(unit).forEach((item, slotIndex) => {
+      if (!item) return;
+      const mark = item.id === unit.equippedItemId ? '★' : '';
+      add(`${mark}${itemButtonLabel(item)}`, () => depositPreparationItem(unit, slotIndex));
+    });
+    add('戻る', () => { preparationMode = 'unitMenu'; });
+    return;
+  }
+
+  if (preparationMode === 'withdraw') {
+    const pageSize = 8;
+    const start = convoyPage * pageSize;
+    convoy.slice(start, start + pageSize).forEach((item, index) => {
+      add(itemButtonLabel(item), () => withdrawPreparationItem(unit, start + index));
+    });
+    if (convoyPage > 0) add('前のページ', () => { convoyPage -= 1; });
+    if (start + pageSize < convoy.length) add('次のページ', () => { convoyPage += 1; });
+    add('戻る', () => { preparationMode = 'unitMenu'; });
+    return;
+  }
+
+  if (preparationMode === 'equip') {
+    for (const item of inventorySlots(unit)) {
+      if (!isWeapon(item)) continue;
+      const mark = item.id === unit.equippedItemId ? '★' : '';
+      add(`${mark}${itemButtonLabel(item)}`, () => {
+        equipWeapon(unit, item);
+        log(`${unit.name}は${item.name}を装備した`);
+        preparationMode = 'unitMenu';
+      });
+    }
+    add('戻る', () => { preparationMode = 'unitMenu'; });
+    return;
+  }
+
+  inventorySlots(unit).forEach((item, slotIndex) => {
+    if (!isConsumable(item)) return;
+    const disabled = item.effect === 'heal' && (unit.unavailable || unit.hp >= unit.maxHp);
+    const detail = item.effect === 'heal' ? `HP+${item.amount}` : item.stat ? `${statLabels[item.stat]}+${item.amount}` : '';
+    add(`${item.name} ${detail}`, () => usePreparationConsumable(unit, slotIndex), disabled);
+  });
+  add('戻る', () => { preparationMode = 'unitMenu'; });
 }
 
 function buildRestButtons(): void {
@@ -942,6 +1085,7 @@ function draw(): void {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (phase === 'world') drawWorldMap();
+  else if (phase === 'preparation') drawPreparationScreen();
   else if (phase === 'reward') drawRewardScreen();
   else if (phase === 'rest') drawRestScreen();
   else {
@@ -1113,7 +1257,7 @@ function drawUnits(): void {
 
 function drawRewardScreen(): void {
   drawText('BATTLE REWARD', MAP_X + 155, MAP_Y + 62, '#f0ead2', 24);
-  drawText('3つの候補から1つ選び、空き所持品欄のある味方に渡します。', MAP_X + 48, MAP_Y + 104, '#cde6c7', 16);
+  drawText('3つの候補から1つ選び、味方か輸送隊へ送ります。', MAP_X + 64, MAP_Y + 104, '#cde6c7', 16);
 
   if (!selectedReward) {
     rewardOptions.forEach((option, index) => {
@@ -1129,7 +1273,44 @@ function drawRewardScreen(): void {
   }
 
   drawText(`選択中: [${rarityLabel(selectedReward.rarity)}] ${selectedReward.name}`, MAP_X + 98, MAP_Y + 162, rarityColor(selectedReward.rarity), 18);
-  drawText('右のボタンから受け取るユニットを選んでください。', MAP_X + 78, MAP_Y + 202, '#ffffff', 16);
+  drawText('右のボタンから受取先を選んでください。', MAP_X + 98, MAP_Y + 202, '#ffffff', 16);
+}
+
+function drawPreparationItem(item: InventorySlot, equippedItemId: string | null): string {
+  if (!item) return '-';
+  if (item.category === 'weapon') {
+    const mark = item.id === equippedItemId ? '★' : '';
+    return `${mark}${item.name} ${item.durability}/${item.maxDurability}`;
+  }
+  return `${item.name} x${item.uses}`;
+}
+
+function drawPreparationScreen(): void {
+  drawText('PREPARATION', MAP_X + 172, MAP_Y + 40, '#f0ead2', 24);
+
+  drawText(`輸送隊 (${convoy.length})`, MAP_X + 14, MAP_Y + 78, '#fff36a', 18);
+  if (convoy.length === 0) {
+    drawText('保管中のアイテムはありません', MAP_X + 24, MAP_Y + 104, '#888', 14);
+  } else {
+    convoy.slice(0, 10).forEach((item, index) => {
+      const x = MAP_X + 18 + (index % 2) * 250;
+      const y = MAP_Y + 104 + Math.floor(index / 2) * 20;
+      drawText(`${index + 1}. ${drawPreparationItem(item, null)}`, x, y, item.category === 'weapon' ? '#d8e7ff' : '#cde6c7', 13);
+    });
+    if (convoy.length > 10) drawText(`ほか ${convoy.length - 10}個`, MAP_X + 408, MAP_Y + 208, '#aaa', 12);
+  }
+
+  players.forEach((unit, index) => {
+    const x = MAP_X + 14 + (index % 2) * 250;
+    const y = MAP_Y + 226 + Math.floor(index / 2) * 94;
+    const selectedMark = preparationUnit?.id === unit.id ? '▶ ' : '';
+    const status = unit.unavailable ? ' [戦闘不能]' : '';
+    drawText(`${selectedMark}${unit.name}${status}`, x, y, unit.unavailable ? '#ffb0b0' : '#ffffff', 15);
+    inventorySlots(unit).forEach((item, slotIndex) => {
+      const color = !item ? '#777' : item.category === 'weapon' ? '#d8e7ff' : '#cde6c7';
+      drawText(`${slotIndex + 1}. ${drawPreparationItem(item, unit.equippedItemId)}`, x + 8, y + 18 + slotIndex * 16, color, 12);
+    });
+  });
 }
 
 function drawRestScreen(): void {
@@ -1160,6 +1341,17 @@ function drawPanel(): void {
     if (restMode === 'repairTarget') drawText('修繕する武器を選択', PANEL_X + 16, 134, '#d8e7ff', 16);
   }
 
+  if (phase === 'preparation') {
+    if (preparationUnit) {
+      drawText(`${preparationUnit.name} / ${preparationUnit.cls}`, PANEL_X + 16, 102, '#fff36a', 20);
+      drawText(`HP ${preparationUnit.hp}/${preparationUnit.maxHp}  輸送隊 ${convoy.length}個`, PANEL_X + 16, 130, '#ffffff', 16);
+      drawText(`操作: ${preparationModeLabel()}`, PANEL_X + 16, 156, '#cde6c7', 15);
+    } else {
+      drawText('管理するユニットを選んでください。', PANEL_X + 16, 106, '#cde6c7', 16);
+      drawText(`輸送隊: ${convoy.length}個`, PANEL_X + 16, 136, '#ffffff', 16);
+    }
+  }
+
   if (phase === 'world') drawText('次のマスへ進んでください。', PANEL_X + 16, 106, '#cde6c7', 16);
 
   drawCombatPreviewPanel();
@@ -1185,10 +1377,26 @@ function drawBattleInfoPanel(): void {
   y += 28;
   drawText(`Lv${info.level} EXP${info.exp}  HP ${info.hp}/${info.maxHp}`, PANEL_X + 16, y, '#fff', 16);
   y += 24;
-  drawText(`力${info.str} 魔${info.mag} 技${info.skl} 速${info.spd}`, PANEL_X + 16, y, '#fff', 16);
+  drawText(
+    `力${effectiveStat(info, 'str')} 魔${effectiveStat(info, 'mag')} 技${effectiveStat(info, 'skl')} 速${effectiveStat(info, 'spd')}`,
+    PANEL_X + 16,
+    y,
+    '#fff',
+    16,
+  );
   y += 24;
-  drawText(`守${info.def} 魔防${info.res} 移${info.move}`, PANEL_X + 16, y, '#fff', 16);
+  drawText(`守${effectiveStat(info, 'def')} 魔防${effectiveStat(info, 'res')} 移${info.move}`, PANEL_X + 16, y, '#fff', 16);
   y += 24;
+
+  const playerClass = getPlayerClass(info);
+  if (playerClass) {
+    const modifier = Object.entries(playerClass.statModifiers)
+      .map(([stat, amount]) => `${statLabels[stat as keyof typeof statLabels]}+${amount}`)
+      .join(' ');
+    drawText(`職業補正: ${modifier}`, PANEL_X + 270, 96, '#d8e7ff', 14);
+    drawText(`スキル「${playerClass.skillName}」`, PANEL_X + 270, 120, '#fff36a', 15);
+    drawText(playerClass.skillDescription, PANEL_X + 270, 142, '#cde6c7', 13);
+  }
 
   const weapon = getEquippedWeapon(info);
   if (weapon) {
@@ -1291,11 +1499,21 @@ function drawLevelUpPopup(): void {
 
 function phaseLabel(): string {
   if (phase === 'world') return 'ワールドマップ';
+  if (phase === 'preparation') return '身支度';
   if (phase === 'player') return '自軍';
   if (phase === 'enemy') return '敵軍';
   if (phase === 'reward') return '戦闘報酬';
   if (phase === 'rest') return '休憩所';
   return '結果';
+}
+
+function preparationModeLabel(): string {
+  if (preparationMode === 'unitMenu') return 'メニュー';
+  if (preparationMode === 'deposit') return '預ける';
+  if (preparationMode === 'withdraw') return `取り出す ${convoyPage + 1}ページ`;
+  if (preparationMode === 'equip') return '装備変更';
+  if (preparationMode === 'item') return '道具を使う';
+  return 'ユニット選択';
 }
 
 // -----------------------------------------------------------------------------

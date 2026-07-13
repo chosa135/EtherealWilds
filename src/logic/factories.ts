@@ -2,6 +2,7 @@ import { MAX_STRONG_PER_MAP } from '../constants';
 import { consumableMasters } from '../data/items';
 import { enemyUnitMasters } from '../data/enemies';
 import { playerUnitMasters } from '../data/playerUnits';
+import { playerClassMasters } from '../data/classes';
 import { weaponMasters } from '../data/weapons';
 import type { Consumable, EnemyPlacement, InventorySlot, InventoryTemplate, Item, Unit, Weapon } from '../types';
 
@@ -41,13 +42,15 @@ export function createItem(template: InventoryTemplate): InventorySlot {
 
 export function createPlayerUnits(): Unit[] {
   return playerUnitMasters.map((master) => {
+    const playerClass = playerClassMasters[master.classId];
     const inventory = master.inventory.map(createItem);
     const equipped = inventory[master.equippedSlot];
 
     return {
       id: master.id,
       name: master.name,
-      cls: master.cls,
+      cls: playerClass.name,
+      classId: master.classId,
       team: 'player',
       x: 0,
       y: 0,
@@ -82,6 +85,7 @@ export function createEnemyUnit(placement: EnemyPlacement): Unit {
     id: placement.id,
     name: master.name,
     cls: master.cls,
+    classId: null,
     team: 'enemy',
     x: placement.x,
     y: placement.y,

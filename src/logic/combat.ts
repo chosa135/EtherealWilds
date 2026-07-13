@@ -1,5 +1,6 @@
 import { STRONG_BASE_POWER } from '../constants';
 import type { AttackKind, AttackSpec, CombatIntent, CombatLine, CombatPreview, Unit } from '../types';
+import { effectiveStat, hasClassSkill } from './classes';
 import { getEquippedWeapon } from './inventory';
 
 export function clamp(value: number, min: number, max: number): number {
@@ -23,7 +24,7 @@ export function attackSpec(kind: AttackKind, attacker: Unit, defender: Unit): At
     return {
       label: '強撃',
       flatDamageBonus: STRONG_BASE_POWER,
-      skillDamageBonus: Math.max(attacker.skl - defender.skl, 0),
+      skillDamageBonus: Math.max(effectiveStat(attacker, 'skl') - effectiveStat(defender, 'skl'), 0),
       durabilityCost: 3,
     };
   }
@@ -40,25 +41,33 @@ export function baseAttackPower(attacker: Unit): number {
   const weapon = getEquippedWeapon(attacker);
   if (!weapon) return 0;
 
-  return (weapon.kind === 'magic' ? attacker.mag : attacker.str) + weapon.might;
+  return effectiveStat(attacker, weapon.kind === 'magic' ? 'mag' : 'str') + weapon.might;
 }
 
 export function defenseAgainst(attacker: Unit, defender: Unit): number {
   const weapon = getEquippedWeapon(attacker);
-  return weapon?.kind === 'magic' ? defender.res : defender.def;
+  return effectiveStat(defender, weapon?.kind === 'magic' ? 'res' : 'def');
 }
 
-export function damageFor(attacker: Unit, defender: Unit, kind: AttackKind): number {
+export function damageFor(attacker: Unit, defender: Unit, kind: AttackKind, combatInitiatorId: string): number {
   const spec = attackSpec(kind, attacker, defender);
   const normalDamage = Math.max(1, baseAttackPower(attacker) - defenseAgainst(attacker, defender));
-  return normalDamage + spec.flatDamageBonus + spec.skillDamageBonus;
+  const fullDrawBonus = hasClassSkill(attacker, 'fullDraw') && attacker.hp === attacker.maxHp ? 2 : 0;
+  const defensiveStanceReduction = hasClassSkill(defender, 'defensiveStance') && defender.id !== combatInitiatorId ? 2 : 0;
+  return Math.max(0, normalDamage + spec.flatDamageBonus + spec.skillDamageBonus + fullDrawBonus - defensiveStanceReduction);
 }
 
-export function hitRate(attacker: Unit, defender: Unit): number {
+export function hitRate(attacker: Unit, defender: Unit, combatInitiatorId: string): number {
   const weapon = getEquippedWeapon(attacker);
   if (!weapon) return 0;
 
-  return clamp(weapon.hit + attacker.skl * 2 - defender.spd * 2, 0, 100);
+  const focusBonus = hasClassSkill(attacker, 'focus') && attacker.id === combatInitiatorId ? 10 : 0;
+  const nimbleAvoid = hasClassSkill(defender, 'nimble') ? 10 : 0;
+  return clamp(
+    weapon.hit + effectiveStat(attacker, 'skl') * 2 - effectiveStat(defender, 'spd') * 2 + focusBonus - nimbleAvoid,
+    0,
+    100,
+  );
 }
 
 export function roll2RN(hit: number): boolean {
@@ -66,7 +75,7 @@ export function roll2RN(hit: number): boolean {
 }
 
 export function canDouble(attacker: Unit, defender: Unit): boolean {
-  return attacker.spd >= defender.spd + 4;
+  return effectiveStat(attacker, 'spd') >= effectiveStat(defender, 'spd') + 4;
 }
 
 export function canAffordStrike(unit: Unit, kind: AttackKind): boolean {
@@ -83,6 +92,7 @@ function buildCombatLine(
   actor: Unit,
   target: Unit,
   kind: AttackKind,
+  combatInitiatorId: string,
   available: boolean,
   note?: string,
 ): CombatLine {
@@ -91,8 +101,8 @@ function buildCombatLine(
     actor,
     target,
     attackKind: kind,
-    damage: damageFor(actor, target, kind),
-    hit: hitRate(actor, target),
+    damage: damageFor(actor, target, kind, combatInitiatorId),
+    hit: hitRate(actor, target, combatInitiatorId),
     durabilityCost: attackSpec(kind, actor, target).durabilityCost,
     available,
     note,
@@ -113,6 +123,7 @@ export function buildCombatPreview(intent: CombatIntent): CombatPreview {
       attacker,
       defender,
       firstAttackKind,
+      attacker.id,
       firstAvailable,
       firstAvailable
         ? firstAttackKind === 'strong'
@@ -124,12 +135,12 @@ export function buildCombatPreview(intent: CombatIntent): CombatPreview {
   if (firstAvailable) attackerDurability -= firstCost;
 
   if (inRange(defender, attacker)) {
-    lines.push(buildCombatLine('敵の反撃', defender, attacker, 'normal', true, '敵が生存時'));
+    lines.push(buildCombatLine('敵の反撃', defender, attacker, 'normal', attacker.id, true, '敵が生存時'));
     if (canDouble(defender, attacker)) {
-      lines.push(buildCombatLine('敵の追撃反撃', defender, attacker, 'normal', true, '敵が生存時'));
+      lines.push(buildCombatLine('敵の追撃反撃', defender, attacker, 'normal', attacker.id, true, '敵が生存時'));
     }
   } else {
-    lines.push(buildCombatLine('敵の反撃', defender, attacker, 'normal', false, '射程外'));
+    lines.push(buildCombatLine('敵の反撃', defender, attacker, 'normal', attacker.id, false, '射程外'));
   }
 
   if (canDouble(attacker, defender)) {
@@ -141,6 +152,7 @@ export function buildCombatPreview(intent: CombatIntent): CombatPreview {
         attacker,
         defender,
         'normal',
+        attacker.id,
         followAvailable,
         followAvailable ? '敵が生存時' : '耐久不足',
       ),

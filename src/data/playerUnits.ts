@@ -5,7 +5,7 @@ export const playerUnitMasters: PlayerUnitMaster[] = [
   {
     id: 'p1',
     name: 'リュカ',
-    cls: '剣士',
+    classId: 'swordfighter',
     move: 4,
     level: 1,
     exp: 0,
@@ -28,7 +28,7 @@ export const playerUnitMasters: PlayerUnitMaster[] = [
   {
     id: 'p2',
     name: 'グレン',
-    cls: '槍兵',
+    classId: 'lancer',
     move: 4,
     level: 1,
     exp: 0,
@@ -51,7 +51,7 @@ export const playerUnitMasters: PlayerUnitMaster[] = [
   {
     id: 'p3',
     name: 'エナ',
-    cls: '弓兵',
+    classId: 'archer',
     move: 4,
     level: 1,
     exp: 0,
@@ -74,7 +74,7 @@ export const playerUnitMasters: PlayerUnitMaster[] = [
   {
     id: 'p4',
     name: 'ミロ',
-    cls: '魔道士',
+    classId: 'mage',
     move: 4,
     level: 1,
     exp: 0,

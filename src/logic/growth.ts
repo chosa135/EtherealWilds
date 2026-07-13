@@ -1,5 +1,6 @@
 import { statLabels } from '../constants';
 import type { LevelUpPopup, StatKey, Unit } from '../types';
+import { getPlayerClass } from './classes';
 
 export const COMBAT_EXP = 10;
 export const KILL_EXP = 20;
@@ -28,6 +29,13 @@ function levelUp(unit: Unit): LevelUpPopup {
     const stat = weightedStat(unit.growth);
     unit[stat] += 1;
     gains[stat] = (gains[stat] ?? 0) + 1;
+  }
+
+  const playerClass = getPlayerClass(unit);
+  if (playerClass) {
+    const classStat = weightedStat(playerClass.growth);
+    unit[classStat] += 1;
+    gains[classStat] = (gains[classStat] ?? 0) + 1;
   }
 
   const gainedStats = Object.entries(gains).map(([key, amount]) => ({

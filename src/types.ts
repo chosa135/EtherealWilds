@@ -1,11 +1,14 @@
 export type Team = 'player' | 'enemy';
 export type Tile = 'plain' | 'forest' | 'wall';
-export type Phase = 'world' | 'player' | 'enemy' | 'reward' | 'rest' | 'result';
+export type Phase = 'world' | 'preparation' | 'player' | 'enemy' | 'reward' | 'rest' | 'result';
 export type Mode = 'idle' | 'move' | 'menu' | 'equip' | 'item' | 'targetAttack' | 'targetStrong' | 'confirmCombat';
 export type StatKey = 'str' | 'mag' | 'skl' | 'spd' | 'def' | 'res';
+export type PlayerClassId = 'swordfighter' | 'lancer' | 'archer' | 'mage';
+export type ClassSkill = 'nimble' | 'defensiveStance' | 'fullDraw' | 'focus';
 export type AttackKind = 'normal' | 'strong';
 export type WorldNodeType = 'start' | 'battle' | 'rest' | 'end';
 export type RestMode = 'main' | 'repairTarget';
+export type PreparationMode = 'selectUnit' | 'unitMenu' | 'deposit' | 'withdraw' | 'equip' | 'item';
 export type ConsumableEffect = 'heal' | 'statBoost';
 export type RewardRarity = 'common' | 'uncommon' | 'rare';
 export type RewardCategory = 'weapon' | 'consumable';
@@ -45,6 +48,7 @@ export type Unit = {
   id: string;
   name: string;
   cls: string;
+  classId: PlayerClassId | null;
   team: Team;
   x: number;
   y: number;
@@ -156,7 +160,7 @@ export type InventoryTemplate =
 export type PlayerUnitMaster = {
   id: string;
   name: string;
-  cls: string;
+  classId: PlayerClassId;
   move: number;
   level: number;
   exp: number;
@@ -170,6 +174,16 @@ export type PlayerUnitMaster = {
   growth: Record<StatKey, number>;
   inventory: InventoryTemplate[];
   equippedSlot: number;
+};
+
+export type PlayerClassMaster = {
+  id: PlayerClassId;
+  name: string;
+  statModifiers: Partial<Record<StatKey, number>>;
+  skill: ClassSkill;
+  skillName: string;
+  skillDescription: string;
+  growth: Record<StatKey, number>;
 };
 
 export type EnemyUnitMaster = {
