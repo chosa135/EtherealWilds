@@ -26,7 +26,7 @@ import {
 } from './constants';
 import { battleMaps, worldNodes } from './data/maps';
 import { createRewardOptions } from './logic/rewards';
-import { chooseEnemyAttackTarget, chooseEnemyMoveDestination } from './logic/enemyAI';
+import { chooseEnemyAction } from './logic/enemyAI';
 import { createEnemyUnit, createItem, createPlayerUnits } from './logic/factories';
 import { addExp, COMBAT_EXP, KILL_EXP, MAP_CLEAR_EXP, levelUpLog } from './logic/growth';
 import { effectiveStat, getPlayerClass } from './logic/classes';
@@ -565,16 +565,19 @@ function runEnemyTurn(): void {
     const candidates = livingPlayers();
     if (candidates.length === 0) break;
 
-    let target = chooseEnemyAttackTarget(enemy, candidates);
-    if (!target) {
-      const destination = chooseEnemyMoveDestination(enemy, candidates, computeReachable(enemy));
-      enemy.x = destination.x;
-      enemy.y = destination.y;
-      target = chooseEnemyAttackTarget(enemy, candidates);
-    }
+    const decision = chooseEnemyAction(enemy, candidates, {
+      width: W,
+      height: H,
+      units: allUnits(),
+      tileAt: (point) => tileAt(point.x, point.y),
+      moveCost: (point) => moveCost(point.x, point.y),
+    });
+    enemy.x = decision.destination.x;
+    enemy.y = decision.destination.y;
 
-    if (target) {
-      doCombat({ attacker: enemy, defender: target, firstAttackKind: 'normal' });
+    if (decision.kind === 'battle') {
+      equipWeapon(enemy, decision.weapon);
+      doCombat({ attacker: enemy, defender: decision.target, firstAttackKind: 'normal' });
     }
 
     if (phase !== 'enemy') return;

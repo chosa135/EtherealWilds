@@ -51,7 +51,7 @@ export function defenseAgainst(attacker: Unit, defender: Unit): number {
 
 export function damageFor(attacker: Unit, defender: Unit, kind: AttackKind, combatInitiatorId: string): number {
   const spec = attackSpec(kind, attacker, defender);
-  const normalDamage = Math.max(1, baseAttackPower(attacker) - defenseAgainst(attacker, defender));
+  const normalDamage = Math.max(0, baseAttackPower(attacker) - defenseAgainst(attacker, defender));
   const fullDrawBonus = hasClassSkill(attacker, 'fullDraw') && attacker.hp === attacker.maxHp ? 2 : 0;
   const defensiveStanceReduction = hasClassSkill(defender, 'defensiveStance') && defender.id !== combatInitiatorId ? 2 : 0;
   return Math.max(0, normalDamage + spec.flatDamageBonus + spec.skillDamageBonus + fullDrawBonus - defensiveStanceReduction);
