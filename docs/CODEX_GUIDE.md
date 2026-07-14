@@ -56,8 +56,8 @@ npm run dev
 | マップ追加 | `src/data/maps.ts` |
 | 戦闘式変更 | `src/logic/combat.ts`, `docs/DESIGN.md` |
 | 敵AI変更 | `src/logic/enemyAI.ts` |
-| 所持品UI・装備処理 | `src/logic/inventory.ts`, `src/main.ts` |
-| 画面描画 | `src/main.ts` |
+| 所持品UI・装備処理 | `src/logic/inventory.ts`, `src/ui/buttons.ts`, `src/ui/screens/management.ts` |
+| 画面描画 | `src/ui/`, `src/ui/screens/` |
 
 ## Codexへの依頼例
 
@@ -97,7 +97,8 @@ npm run build を通してください。
 
 ## 現在の注意点
 
-- `main.ts` にはまだ進行管理・入力・描画が多く残っています。新規ロジックを追加する場合は、可能な限り `src/logic/` に切り出してください。
+- `main.ts` は初期化、入力・描画ループ、各フローの接続を担当します。用途別UI状態と進行処理は `src/game/`、純粋な計算は `src/logic/`、入力登録は `src/input/`、描画は `src/ui/` に配置してください。
+- `src/game/` のフローモジュールにはゲーム全体の状態を独自に保持させず、必要な状態とコールバックを引数またはコンテキストとして渡してください。
 - 戦闘中に能力強化アイテムを使える仕様です。将来的にはワールドマップまたは準備画面で使う仕様に移す候補です。
 - 報酬受け取り時、所持品が満杯の場合の入れ替えUIはありません。
 - 輸送隊はワールドマップの身支度でのみ利用できます。戦闘中から参照・操作する導線は追加しないでください。

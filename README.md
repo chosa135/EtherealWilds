@@ -69,9 +69,21 @@ npm run build
 
 ```txt
 src/
-  main.ts              # ゲーム状態、入力、進行、描画の接着
+  main.ts              # 初期化、入力・描画・各フローの接続
   types.ts             # 型定義
   constants.ts         # 画面サイズ、共通常数
+  game/
+    state.ts           # ラン全体のゲーム状態
+    uiState.ts         # 用途別の画面・操作状態
+    worldFlow.ts       # ワールドノード進行と戦闘データ展開
+    worldEventFlow.ts  # ワールドイベント進行
+    battleFlow.ts      # 戦闘開始、戦闘解決、フェイズ進行
+    playerActionFlow.ts # 戦闘マップ上の味方操作状態遷移
+    restFlow.ts        # 休憩所進行と効果
+    preparationFlow.ts # 身支度と輸送隊の進行
+    rewardFlow.ts      # 報酬の受け渡し
+  input/
+    canvasInput.ts     # Canvasのポインター・ホイール入力
   data/
     weapons.ts         # 武器テーブル
     items.ts           # 消費アイテムテーブル
@@ -83,6 +95,8 @@ src/
     rewards.ts         # 報酬レート、報酬テーブル
   logic/
     combat.ts          # 戦闘計算、戦闘予測
+    combatResolution.ts # 攻撃実行、耐久消費、撃破処理
+    map.ts             # 地形、移動範囲、攻撃範囲
     inventory.ts       # 所持品、装備、空き枠処理
     classes.ts         # 職業参照、実効能力値
     enemyAI.ts         # 敵AI
@@ -93,6 +107,10 @@ src/
     theme.ts           # UI配色、文字階層
     canvas.ts          # ウインドウ、ボタン、ゲージなどの共通描画
     widgets.ts         # ログ、HP表示などの複合UI
+    buttons.ts         # フェーズ別ボタン構築
+    panel.ts           # 右側情報パネル
+    popups.ts          # レベルアップ、戦闘終了表示
+    screens/           # ワールド・戦闘・管理画面の描画
 
 docs/
   DESIGN.md            # 現行仕様と設計意図
