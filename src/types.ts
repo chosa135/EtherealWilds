@@ -1,12 +1,14 @@
 export type Team = 'player' | 'enemy';
 export type Tile = 'plain' | 'forest' | 'wall';
-export type Phase = 'world' | 'preparation' | 'player' | 'enemy' | 'reward' | 'rest' | 'result';
+export type Phase = 'world' | 'preparation' | 'event' | 'battleChoice' | 'player' | 'enemy' | 'reward' | 'rest' | 'result';
 export type Mode = 'idle' | 'move' | 'menu' | 'equip' | 'item' | 'targetAttack' | 'targetStrong' | 'confirmCombat';
 export type StatKey = 'str' | 'mag' | 'skl' | 'spd' | 'def' | 'res';
 export type PlayerClassId = 'swordfighter' | 'lancer' | 'archer' | 'mage';
 export type ClassSkill = 'nimble' | 'defensiveStance' | 'fullDraw' | 'focus';
 export type AttackKind = 'normal' | 'strong';
-export type WorldNodeType = 'start' | 'battle' | 'rest' | 'end';
+export type WorldNodeType = 'start' | 'battle' | 'event' | 'battleChoice' | 'rest' | 'end';
+export type WorldEventId = 'smallShade' | 'spiritSpring' | 'ruggedPath' | 'abandonedCamp';
+export type WorldEventMode = 'choice' | 'shadeLookout' | 'campRepair' | 'resolved';
 export type RestMode = 'main' | 'repairTarget';
 export type PreparationMode = 'selectUnit' | 'unitMenu' | 'deposit' | 'withdraw' | 'equip' | 'item';
 export type ConsumableEffect = 'heal' | 'statBoost';
@@ -87,6 +89,20 @@ export type EnemyPlacement = {
 export type WorldNode = {
   type: WorldNodeType;
   battleIndex?: number;
+  battleChoices?: BattleChoice[];
+};
+
+export type BattleChoice = {
+  label: string;
+  description: string;
+  battleIndex: number;
+  strong?: boolean;
+};
+
+export type WorldEventDefinition = {
+  id: WorldEventId;
+  title: string;
+  text: string;
 };
 
 export type Button = {

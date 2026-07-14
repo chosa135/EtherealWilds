@@ -46,6 +46,15 @@ export const battleMaps: MapDef[] = [
       { id: 'e14', enemyId: 'boss', x: 6, y: 5 },
     ],
   },
+  {
+    name: '幽樹海・獣王の縄張り',
+    tiles: ['..f.....', '....#...', '.f..#...', '........', '...ff...', '........'],
+    enemies: [
+      { id: 'e15', enemyId: 'axeBandit', x: 5, y: 1 },
+      { id: 'e16', enemyId: 'cursePlant', x: 6, y: 2 },
+      { id: 'e17', enemyId: 'forestBrute', x: 6, y: 5 },
+    ],
+  },
 ];
 
 export const worldNodes: WorldNode[] = [
@@ -54,7 +63,14 @@ export const worldNodes: WorldNode[] = [
   { type: 'battle', battleIndex: 1 },
   { type: 'rest' },
   { type: 'battle', battleIndex: 2 },
-  { type: 'battle', battleIndex: 3 },
+  { type: 'event' },
+  {
+    type: 'battleChoice',
+    battleChoices: [
+      { label: '通常戦闘へ', description: '幽金の細脈を慎重に進む', battleIndex: 3 },
+      { label: '強敵に挑む', description: '獣王の縄張りへ踏み込む', battleIndex: 5, strong: true },
+    ],
+  },
   { type: 'rest' },
   { type: 'battle', battleIndex: 4 },
   { type: 'end' },

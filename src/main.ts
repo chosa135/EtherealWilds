@@ -31,6 +31,13 @@ import { createEnemyUnit, createItem, createPlayerUnits } from './logic/factorie
 import { addExp, COMBAT_EXP, KILL_EXP, MAP_CLEAR_EXP, levelUpLog } from './logic/growth';
 import { effectiveStat, getPlayerClass } from './logic/classes';
 import {
+  applyRuggedPathDamage,
+  repairWeaponHalf,
+  restExceptLookout,
+  rollStatDropMasterId,
+  rollWorldEvent,
+} from './logic/worldEvents';
+import {
   addItemToFirstEmptySlot,
   allRepairTargets,
   depositItem,
@@ -70,6 +77,8 @@ import type {
   Item,
   Unit,
   Weapon,
+  WorldEventDefinition,
+  WorldEventMode,
 } from './types';
 import {
   drawBackdrop,
@@ -77,6 +86,7 @@ import {
   drawSectionHeader,
   drawSegmentedGauge,
   drawText as renderText,
+  drawWrappedText,
   drawWindow,
 } from './ui/canvas';
 import { palette, typography } from './ui/theme';
@@ -130,6 +140,10 @@ let convoy: Item[] = [];
 let preparationMode: PreparationMode = 'selectUnit';
 let preparationUnit: Unit | null = null;
 let convoyPage = 0;
+let currentEvent: WorldEventDefinition | null = null;
+let eventMode: WorldEventMode = 'choice';
+let eventResult = '';
+let selectedBattleChoiceIndex: number | null = null;
 
 // -----------------------------------------------------------------------------
 // 汎用処理
@@ -451,11 +465,82 @@ function finishPreparation(): void {
   log('身支度を終えた');
 }
 
+function startWorldEvent(): void {
+  currentEvent = rollWorldEvent();
+  eventMode = 'choice';
+  eventResult = '';
+  phase = 'event';
+  mode = 'idle';
+  clearSelection();
+  log(`探索イベント：${currentEvent.title}`);
+}
+
+function completeWorldEvent(message: string): void {
+  eventResult = message;
+  eventMode = 'resolved';
+  log(message);
+}
+
+function finishWorldEvent(): void {
+  currentEvent = null;
+  eventResult = '';
+  returnToWorld();
+}
+
+function chooseShadeLookout(lookout: Unit): void {
+  const rested = restExceptLookout(players, lookout.id);
+  const restedNames = rested.map((unit) => unit.name).join('、');
+  completeWorldEvent(`${lookout.name}に見張りを任せて休息した。${restedNames || '他の隊員'}は十分に体を休めることができた。`);
+}
+
+function takeSpiritDrop(): void {
+  const item = createItem({ category: 'consumable', masterId: rollStatDropMasterId() });
+  if (!item) return;
+  convoy.push(item);
+  completeWorldEvent(`${item.name}を1つ入手し、輸送隊へ送った。`);
+}
+
+function takeRuggedShortcut(): void {
+  applyRuggedPathDamage(players);
+  players.forEach((unit) => grantExp(unit, 20));
+  completeWorldEvent('険しい道を進んだ。味方全員のHPが5減少し、EXPを20獲得した。');
+}
+
+function takeRuggedDetour(): void {
+  players.forEach((unit) => grantExp(unit, 10));
+  completeWorldEvent('安全な迂回路を進んだ。味方全員がEXPを10獲得した。');
+}
+
+function repairCampWeapon(target: { unit: Unit; weapon: Weapon }): void {
+  repairWeaponHalf(target.weapon);
+  completeWorldEvent(`${target.unit.name}の${target.weapon.name}を最大耐久の50%ぶん修繕した。`);
+}
+
+function takeCampMedicine(): void {
+  const item = createItem({ category: 'consumable', masterId: 'vulnerary' });
+  if (!item) return;
+  convoy.push(item);
+  completeWorldEvent('傷薬を1個入手し、輸送隊へ送った。');
+}
+
+function chooseBattle(battleIndex: number): void {
+  selectedBattleChoiceIndex = battleIndex;
+  startBattle(battleIndex);
+}
+
 function advanceWorld(): void {
   if (currentWorldIndex < worldNodes.length - 1) currentWorldIndex += 1;
 
   const node = worldNodes[currentWorldIndex];
   if (node.type === 'battle' && node.battleIndex !== undefined) return startBattle(node.battleIndex);
+  if (node.type === 'event') return startWorldEvent();
+  if (node.type === 'battleChoice') {
+    phase = 'battleChoice';
+    mode = 'idle';
+    clearSelection();
+    log('進む戦場を選択してください');
+    return;
+  }
   if (node.type === 'rest') return startRest();
   if (node.type === 'end') {
     phase = 'result';
@@ -737,6 +822,10 @@ function resetRun(): void {
   preparationMode = 'selectUnit';
   preparationUnit = null;
   convoyPage = 0;
+  currentEvent = null;
+  eventMode = 'choice';
+  eventResult = '';
+  selectedBattleChoiceIndex = null;
   logs = [];
   clearSelection();
   log('探索準備完了');
@@ -775,6 +864,26 @@ function buildButtons(): void {
     return;
   }
 
+  if (phase === 'event') {
+    buildWorldEventButtons();
+    return;
+  }
+
+  if (phase === 'battleChoice') {
+    const choices = worldNodes[currentWorldIndex].battleChoices ?? [];
+    choices.forEach((choice, index) => {
+      buttons.push({
+        label: choice.label,
+        x: PANEL_X + 16,
+        y: 190 + index * 48,
+        w: 300,
+        h: 38,
+        action: () => chooseBattle(choice.battleIndex),
+      });
+    });
+    return;
+  }
+
   if (phase === 'player') {
     buttons.push({
       label: 'ターン終了',
@@ -803,6 +912,50 @@ function buildButtons(): void {
   }
 
   buildActionButtons();
+}
+
+function buildWorldEventButtons(): void {
+  let y = 260;
+  const add = (label: string, action: () => void, disabled = false): void => {
+    buttons.push({ label, x: PANEL_X + 16, y, w: 360, h: 34, action, disabled });
+    y += 39;
+  };
+
+  if (!currentEvent) return;
+
+  if (eventMode === 'resolved') {
+    add('探索を続ける', finishWorldEvent);
+    return;
+  }
+
+  if (eventMode === 'shadeLookout') {
+    players.forEach((unit) => add(`${unit.name}を見張り役にする`, () => chooseShadeLookout(unit), unit.unavailable));
+    add('戻る', () => { eventMode = 'choice'; });
+    return;
+  }
+
+  if (eventMode === 'campRepair') {
+    const targets = allRepairTargets(players);
+    targets.forEach((target) => add(
+      `${target.unit.name}: ${target.weapon.name} ${target.weapon.durability}/${target.weapon.maxDurability}`,
+      () => repairCampWeapon(target),
+      target.weapon.durability >= target.weapon.maxDurability,
+    ));
+    add('戻る', () => { eventMode = 'choice'; });
+    return;
+  }
+
+  if (currentEvent.id === 'smallShade') {
+    add('見張り役を選ぶ', () => { eventMode = 'shadeLookout'; });
+  } else if (currentEvent.id === 'spiritSpring') {
+    add('雫を受け取る', takeSpiritDrop);
+  } else if (currentEvent.id === 'ruggedPath') {
+    add('険しい道を進む（全員HP-5 / EXP+20）', takeRuggedShortcut);
+    add('安全な道を進む（全員EXP+10）', takeRuggedDetour);
+  } else {
+    add('武器を1本修繕する', () => { eventMode = 'campRepair'; }, allRepairTargets(players).every(({ weapon }) => weapon.durability >= weapon.maxDurability));
+    add('傷薬を1個入手する', takeCampMedicine);
+  }
 }
 
 function buildActionButtons(): void {
@@ -1123,14 +1276,12 @@ canvas.addEventListener('click', (event) => {
 function draw(): void {
   drawBackdrop(ctx, canvas.width, canvas.height);
 
-  if (phase === 'player' || phase === 'enemy' || phase === 'result') {
-    drawWindow(ctx, MAP_X - 12, MAP_Y - 12, W * TILE + 24, H * TILE + 24, { inset: true });
-  } else {
-    drawWindow(ctx, 16, 16, 548, 404, { inset: true });
-  }
+  drawWindow(ctx, MAP_X - 12, MAP_Y - 12, W * TILE + 24, H * TILE + 24, { inset: true });
 
   if (phase === 'world') drawWorldMap();
   else if (phase === 'preparation') drawPreparationScreen();
+  else if (phase === 'event') drawWorldEventScreen();
+  else if (phase === 'battleChoice') drawBattleChoiceScreen();
   else if (phase === 'reward') drawRewardScreen();
   else if (phase === 'rest') drawRestScreen();
   else {
@@ -1171,61 +1322,152 @@ function rarityColor(rarity: RewardOption['rarity']): string {
 
 function drawWorldMap(): void {
   drawText('禁足樹海 探索路', MAP_X + 166, MAP_Y + 52, palette.goldBright, typography.title);
-  drawText('枝道なき古道を辿り、樹海の深部を目指す。', MAP_X + 92, MAP_Y + 88, palette.textMuted, typography.body);
+  drawText('古道と獣道を辿り、樹海の深部を目指す。', MAP_X + 104, MAP_Y + 88, palette.textMuted, typography.body);
 
-  const startX = MAP_X + 62;
+  const startX = MAP_X + 40;
   const y = MAP_Y + 220;
-  const gap = 54;
+  const gap = (W * TILE - 80) / (worldNodes.length - 1);
+  const branchIndex = worldNodes.findIndex((node) => node.type === 'battleChoice');
+  const branchOffset = 48;
+  const radius = 18;
 
-  for (let i = 0; i < worldNodes.length - 1; i++) {
+  const drawRoute = (fromX: number, fromY: number, toX: number, toY: number, active: boolean): void => {
     ctx.strokeStyle = palette.woodDark;
     ctx.lineWidth = 7;
     ctx.beginPath();
-    ctx.moveTo(startX + i * gap + 18, y);
-    ctx.lineTo(startX + (i + 1) * gap - 18, y);
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
     ctx.stroke();
-    ctx.strokeStyle = i < currentWorldIndex ? palette.gold : palette.metal;
-    ctx.lineWidth = i < currentWorldIndex ? 3 : 2;
+    ctx.strokeStyle = active ? palette.gold : palette.metal;
+    ctx.lineWidth = active ? 3 : 2;
     ctx.beginPath();
-    ctx.moveTo(startX + i * gap + 18, y);
-    ctx.lineTo(startX + (i + 1) * gap - 18, y);
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
     ctx.stroke();
+  };
+
+  for (let i = 0; i < worldNodes.length - 1; i++) {
+    if (i === branchIndex - 1 || i === branchIndex) continue;
+    drawRoute(startX + i * gap + radius, y, startX + (i + 1) * gap - radius, y, i < currentWorldIndex);
   }
 
-  worldNodes.forEach((node, index) => {
-    const x = startX + index * gap;
-    const radius = 18;
+  const branchX = startX + branchIndex * gap;
+  const previousX = branchX - gap;
+  const nextX = branchX + gap;
+  const normalY = y - branchOffset;
+  const strongY = y + branchOffset;
+  const branchPassed = currentWorldIndex >= branchIndex && selectedBattleChoiceIndex !== null;
+  const normalBattleIndex = worldNodes[branchIndex].battleChoices?.find((choice) => !choice.strong)?.battleIndex;
+  const strongBattleIndex = worldNodes[branchIndex].battleChoices?.find((choice) => choice.strong)?.battleIndex;
+  const normalSelected = branchPassed && selectedBattleChoiceIndex === normalBattleIndex;
+  const strongSelected = branchPassed && selectedBattleChoiceIndex === strongBattleIndex;
 
-    const isCurrent = index === currentWorldIndex;
+  drawRoute(previousX + radius, y, branchX - radius, normalY, normalSelected);
+  drawRoute(previousX + radius, y, branchX - radius, strongY, strongSelected);
+  drawRoute(branchX + radius, normalY, nextX - radius, y, normalSelected && currentWorldIndex > branchIndex);
+  drawRoute(branchX + radius, strongY, nextX - radius, y, strongSelected && currentWorldIndex > branchIndex);
+
+  const drawNode = (
+    x: number,
+    nodeY: number,
+    fill: string,
+    label: string,
+    isCurrent: boolean,
+    isPast: boolean,
+  ): void => {
     if (isCurrent) {
       ctx.beginPath();
-      ctx.arc(x, y, radius + 9, 0, Math.PI * 2);
+      ctx.arc(x, nodeY, radius + 9, 0, Math.PI * 2);
       ctx.strokeStyle = palette.blueBright;
       ctx.lineWidth = 3;
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(x, y - radius - 18);
-      ctx.lineTo(x - 7, y - radius - 7);
-      ctx.lineTo(x + 7, y - radius - 7);
+      ctx.moveTo(x, nodeY - radius - 18);
+      ctx.lineTo(x - 7, nodeY - radius - 7);
+      ctx.lineTo(x + 7, nodeY - radius - 7);
       ctx.closePath();
       ctx.fillStyle = palette.blueBright;
       ctx.fill();
     }
 
     ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = node.type === 'battle' ? palette.red : node.type === 'rest' ? palette.green : node.type === 'end' ? palette.metal : palette.blue;
+    ctx.arc(x, nodeY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
     ctx.fill();
-
-    ctx.strokeStyle = isCurrent ? palette.goldBright : index < currentWorldIndex ? palette.gold : palette.woodDark;
+    ctx.strokeStyle = isCurrent ? palette.goldBright : isPast ? palette.gold : palette.woodDark;
     ctx.lineWidth = isCurrent ? 4 : 2;
     ctx.stroke();
+    drawText(label, x - 8, nodeY + 6, palette.text, 16);
+  };
 
-    const label = node.type === 'battle' ? '戦' : node.type === 'rest' ? '休' : node.type === 'end' ? '終' : '始';
-    drawText(label, x - 8, y + 6, palette.text, 16);
+  worldNodes.forEach((node, index) => {
+    if (index === branchIndex) return;
+    const x = startX + index * gap;
+    const isCurrent = index === currentWorldIndex;
+    const fill = node.type === 'battle'
+      ? palette.red
+      : node.type === 'rest'
+        ? palette.green
+        : node.type === 'event'
+          ? palette.gold
+          : node.type === 'end'
+            ? palette.metal
+            : palette.blue;
+    const label = node.type === 'battle'
+      ? '戦'
+      : node.type === 'event'
+          ? '？'
+          : node.type === 'rest'
+            ? '休'
+            : node.type === 'end'
+              ? '終'
+              : '始';
+    drawNode(x, y, fill, label, isCurrent, index < currentWorldIndex);
   });
 
-  drawText('現在地', startX + currentWorldIndex * gap - 23, y + 52, palette.blueBright, typography.small);
+  drawNode(branchX, normalY, palette.red, '戦', currentWorldIndex === branchIndex && normalSelected, currentWorldIndex > branchIndex && normalSelected);
+  drawNode(branchX, strongY, palette.purple, '強', currentWorldIndex === branchIndex && strongSelected, currentWorldIndex > branchIndex && strongSelected);
+
+  const currentX = startX + currentWorldIndex * gap;
+  const currentY = currentWorldIndex === branchIndex
+    ? strongSelected ? strongY : normalY
+    : y;
+  drawText('現在地', currentX - 23, currentY + 52, palette.blueBright, typography.small);
+}
+
+function drawWorldEventScreen(): void {
+  if (!currentEvent) return;
+
+  drawText(currentEvent.title, MAP_X + 198, MAP_Y + 52, palette.goldBright, typography.title);
+  drawWindow(ctx, MAP_X + 48, MAP_Y + 92, 416, 224, { inset: true });
+  drawWrappedText(ctx, currentEvent.text, MAP_X + 76, MAP_Y + 130, 360, 27, palette.text, 16);
+
+  if (eventMode === 'resolved') {
+    ctx.fillStyle = 'rgba(79, 138, 89, 0.13)';
+    ctx.fillRect(MAP_X + 66, MAP_Y + 235, 380, 60);
+    drawWrappedText(ctx, eventResult, MAP_X + 80, MAP_Y + 258, 352, 22, palette.greenBright, 14);
+  } else {
+    const prompt = eventMode === 'shadeLookout'
+      ? '見張り役にする隊員を選んでください。'
+      : eventMode === 'campRepair'
+        ? '修繕する武器を選んでください。'
+        : '行動を選んでください。';
+    drawText(prompt, MAP_X + 80, MAP_Y + 277, palette.blueBright, 15);
+  }
+}
+
+function drawBattleChoiceScreen(): void {
+  drawText('分かれ道', MAP_X + 202, MAP_Y + 52, palette.goldBright, typography.title);
+  drawText('樹海の奥へ至る二つの道。進む戦場を選ぶ。', MAP_X + 92, MAP_Y + 90, palette.textMuted, typography.body);
+
+  const choices = worldNodes[currentWorldIndex].battleChoices ?? [];
+  choices.forEach((choice, index) => {
+    const x = MAP_X + 54;
+    const y = MAP_Y + 132 + index * 108;
+    drawWindow(ctx, x, y, 404, 82, { inset: true, active: choice.strong });
+    drawText(choice.label, x + 24, y + 32, choice.strong ? palette.redBright : palette.blueBright, 19);
+    drawText(choice.description, x + 24, y + 59, palette.textMuted, 14);
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -1435,6 +1677,23 @@ function drawPanel(): void {
     drawText(selectedReward ? `${selectedReward.name}の受取先を選択` : '報酬を1つ選択', PANEL_X + 20, 112, palette.goldBright, 18);
   }
 
+  if (phase === 'event' && currentEvent) {
+    drawText(currentEvent.title, PANEL_X + 20, 112, palette.goldBright, 20);
+    const status = eventMode === 'resolved'
+      ? 'イベントを終えました。'
+      : eventMode === 'shadeLookout'
+        ? '見張り役を選択'
+        : eventMode === 'campRepair'
+          ? '修繕する武器を選択'
+          : '選択肢を選んでください。';
+    drawText(status, PANEL_X + 20, 144, palette.textMuted, 15);
+  }
+
+  if (phase === 'battleChoice') {
+    drawText('第四戦の行き先', PANEL_X + 20, 112, palette.goldBright, 20);
+    drawText('通常戦闘か強敵戦を選択してください。', PANEL_X + 20, 144, palette.textMuted, 15);
+  }
+
   if (phase === 'rest') {
     drawText(`行動残り: ${restActionsLeft}/${REST_ACTION_MAX}`, PANEL_X + 20, 112, palette.goldBright, 18);
     if (restMode === 'repairTarget') drawText('修繕する武器を選択', PANEL_X + 20, 140, palette.blueBright, 16);
@@ -1584,6 +1843,8 @@ function drawLevelUpPopup(): void {
 function phaseLabel(): string {
   if (phase === 'world') return 'ワールドマップ';
   if (phase === 'preparation') return '身支度';
+  if (phase === 'event') return '探索イベント';
+  if (phase === 'battleChoice') return '戦場選択';
   if (phase === 'player') return '自軍';
   if (phase === 'enemy') return '敵軍';
   if (phase === 'reward') return '戦闘報酬';

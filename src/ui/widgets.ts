@@ -19,8 +19,9 @@ export function drawLogWindow(
   ctx.stroke();
   ctx.restore();
 
+  const visibleRows = Math.max(1, Math.floor((height - 68) / 22));
   let rowY = y + 68;
-  messages.slice(0, 8).forEach((message, index) => {
+  messages.slice(0, visibleRows).forEach((message, index) => {
     if (index % 2 === 0) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
       ctx.fillRect(x + 18, rowY - 16, width - 48, 21);
@@ -29,7 +30,7 @@ export function drawLogWindow(
     rowY += 22;
   });
 
-  drawScrollRail(ctx, x + width - 24, y + 54, height - 72, 8, Math.max(8, messages.length));
+  drawScrollRail(ctx, x + width - 24, y + 54, height - 72, visibleRows, Math.max(visibleRows, messages.length));
 }
 
 export function drawHpStatus(

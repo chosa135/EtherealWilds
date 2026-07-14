@@ -22,6 +22,37 @@ export function drawText(
   ctx.restore();
 }
 
+export function drawWrappedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  color: string = palette.text,
+  size: number = 15,
+): number {
+  ctx.save();
+  ctx.font = `normal ${size}px ${fontFamily}`;
+  let line = '';
+  let lineY = y;
+
+  for (const character of text) {
+    const next = line + character;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      drawText(ctx, line, x, lineY, color, size);
+      line = character;
+      lineY += lineHeight;
+    } else {
+      line = next;
+    }
+  }
+
+  if (line) drawText(ctx, line, x, lineY, color, size);
+  ctx.restore();
+  return lineY;
+}
+
 export function drawBackdrop(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   ctx.fillStyle = palette.canvas;
   ctx.fillRect(0, 0, width, height);

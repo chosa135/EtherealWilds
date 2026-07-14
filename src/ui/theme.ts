@@ -17,6 +17,8 @@ export const palette = {
   blueBright: '#82b8e8',
   red: '#a8483f',
   redBright: '#dc7268',
+  purple: '#76539b',
+  purpleBright: '#ac82d3',
   green: '#4f8a59',
   greenBright: '#79bd7d',
   disabled: '#292c29',
