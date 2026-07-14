@@ -1656,9 +1656,24 @@ function drawRestScreen(): void {
 
   const living = livingPlayers().length;
   const down = players.filter((unit) => unit.unavailable).length;
-  drawWindow(ctx, MAP_X + 112, MAP_Y + 132, 292, 104, { inset: true });
-  drawText(`出撃可能　${living}人`, MAP_X + 146, MAP_Y + 172, palette.greenBright, 18);
-  drawText(`戦闘不能　${down}人`, MAP_X + 146, MAP_Y + 207, down > 0 ? palette.redBright : palette.textMuted, 18);
+  drawText(`出撃可能 ${living}人　戦闘不能 ${down}人`, MAP_X + 154, MAP_Y + 136, down > 0 ? palette.redBright : palette.greenBright, 16);
+
+  players.forEach((unit, index) => {
+    const x = MAP_X + 18 + (index % 2) * 264;
+    const y = MAP_Y + 158 + Math.floor(index / 2) * 96;
+    const width = 248;
+    const height = 80;
+
+    ctx.fillStyle = unit.unavailable ? 'rgba(168, 72, 63, 0.12)' : palette.panelRaised;
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeStyle = unit.unavailable ? palette.red : palette.wood;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+
+    drawText(unit.name, x + 14, y + 25, unit.unavailable ? palette.redBright : palette.goldBright, 16);
+    drawText(unit.unavailable ? '戦闘不能' : '出撃可能', x + 164, y + 25, unit.unavailable ? palette.redBright : palette.greenBright, 13);
+    drawHpStatus(ctx, unit.hp, unit.maxHp, x + 14, y + 57, width - 28);
+  });
 }
 
 function drawPanel(): void {
