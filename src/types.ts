@@ -1,6 +1,6 @@
 export type Team = 'player' | 'enemy';
 export type Tile = 'plain' | 'forest' | 'wall';
-export type Phase = 'world' | 'preparation' | 'event' | 'battleChoice' | 'player' | 'enemy' | 'reward' | 'rest' | 'result';
+export type Phase = 'world' | 'preparation' | 'event' | 'battleChoice' | 'player' | 'enemy' | 'battleEnd' | 'reward' | 'rest' | 'result';
 export type Mode = 'idle' | 'move' | 'menu' | 'equip' | 'item' | 'targetAttack' | 'targetStrong' | 'confirmCombat';
 export type StatKey = 'str' | 'mag' | 'skl' | 'spd' | 'def' | 'res';
 export type PlayerClassId = 'swordfighter' | 'lancer' | 'archer' | 'mage';

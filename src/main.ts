@@ -144,6 +144,7 @@ let currentEvent: WorldEventDefinition | null = null;
 let eventMode: WorldEventMode = 'choice';
 let eventResult = '';
 let selectedBattleChoiceIndex: number | null = null;
+let battleEndPopupOpen = false;
 
 // -----------------------------------------------------------------------------
 // 汎用処理
@@ -554,10 +555,13 @@ function advanceWorld(): void {
 
 function checkBattleEnd(): void {
   if (livingEnemies().length === 0) {
+    phase = 'battleEnd';
+    mode = 'idle';
+    clearSelection();
     log('敵全滅');
     players.forEach((unit) => grantExp(unit, MAP_CLEAR_EXP));
     log(`マップクリア：味方全員がEXP+${MAP_CLEAR_EXP}`);
-    startRewardSelection();
+    battleEndPopupOpen = true;
     return;
   }
 
@@ -575,6 +579,11 @@ function startRewardSelection(): void {
   rewardOptions = createRewardOptions(3);
   selectedReward = null;
   log('戦闘報酬を1つ選択してください');
+}
+
+function closeBattleEndPopup(): void {
+  battleEndPopupOpen = false;
+  if (levelUpPopups.length === 0) startRewardSelection();
 }
 
 function selectReward(option: RewardOption): void {
@@ -826,6 +835,7 @@ function resetRun(): void {
   eventMode = 'choice';
   eventResult = '';
   selectedBattleChoiceIndex = null;
+  battleEndPopupOpen = false;
   logs = [];
   clearSelection();
   log('探索準備完了');
@@ -1211,8 +1221,14 @@ canvas.addEventListener('click', (event) => {
   const mx = event.clientX - rect.left;
   const my = event.clientY - rect.top;
 
+  if (battleEndPopupOpen) {
+    closeBattleEndPopup();
+    return;
+  }
+
   if (isPopupOpen()) {
     levelUpPopups.shift();
+    if (levelUpPopups.length === 0 && phase === 'battleEnd') startRewardSelection();
     return;
   }
 
@@ -1292,6 +1308,7 @@ function draw(): void {
   drawLogWindow();
   drawPanel();
   drawLevelUpPopup();
+  drawBattleEndPopup();
   requestAnimationFrame(draw);
 }
 
@@ -1855,6 +1872,22 @@ function drawLevelUpPopup(): void {
   drawText(remaining > 0 ? `クリックで次へ（残り ${remaining}）` : 'クリックで閉じる', x + 112, y + h - 18, palette.textMuted, 14);
 }
 
+function drawBattleEndPopup(): void {
+  if (!battleEndPopupOpen) return;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const width = 430;
+  const height = 180;
+  const x = MAP_X + (W * TILE - width) / 2;
+  const y = MAP_Y + 112;
+  drawWindow(ctx, x, y, width, height, { active: true });
+  drawText('戦闘終了', x + 153, y + 48, palette.goldBright, 26);
+  drawText('勝利ボーナス：全員がEXP+30を獲得', x + 58, y + 96, palette.greenBright, 17);
+  drawText('クリックで次に進む', x + 137, y + 142, palette.textMuted, 15);
+}
+
 function phaseLabel(): string {
   if (phase === 'world') return 'ワールドマップ';
   if (phase === 'preparation') return '身支度';
@@ -1862,6 +1895,7 @@ function phaseLabel(): string {
   if (phase === 'battleChoice') return '戦場選択';
   if (phase === 'player') return '自軍';
   if (phase === 'enemy') return '敵軍';
+  if (phase === 'battleEnd') return '戦闘終了';
   if (phase === 'reward') return '戦闘報酬';
   if (phase === 'rest') return '休憩所';
   return '結果';
