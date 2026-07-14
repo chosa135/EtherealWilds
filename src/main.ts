@@ -99,6 +99,12 @@ import { drawHpStatus, drawLogWindow as renderLogWindow } from './ui/widgets';
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
 
+const WORLD_VIEWPORT_X = MAP_X + 12;
+const WORLD_VIEWPORT_WIDTH = W * TILE - 24;
+const WORLD_NODE_GAP = 112;
+const WORLD_ROUTE_PADDING = 56;
+const WORLD_CONTENT_WIDTH = WORLD_ROUTE_PADDING * 2 + (worldNodes.length - 1) * WORLD_NODE_GAP;
+
 const drawText = (
   text: string,
   x: number,
@@ -145,6 +151,7 @@ let eventMode: WorldEventMode = 'choice';
 let eventResult = '';
 let selectedBattleChoiceIndex: number | null = null;
 let battleEndPopupOpen = false;
+let worldScrollX = 0;
 
 // -----------------------------------------------------------------------------
 // 汎用処理
@@ -153,6 +160,19 @@ let battleEndPopupOpen = false;
 function log(message: string): void {
   logs.unshift(message);
   logs = logs.slice(0, 10);
+}
+
+function maxWorldScroll(): number {
+  return Math.max(0, WORLD_CONTENT_WIDTH - WORLD_VIEWPORT_WIDTH);
+}
+
+function setWorldScroll(value: number): void {
+  worldScrollX = Math.max(0, Math.min(maxWorldScroll(), value));
+}
+
+function centerWorldOnCurrentNode(): void {
+  const currentNodeX = WORLD_ROUTE_PADDING + currentWorldIndex * WORLD_NODE_GAP;
+  setWorldScroll(currentNodeX - WORLD_VIEWPORT_WIDTH / 2);
 }
 
 function parseTiles(mapDef: MapDef): Tile[][] {
@@ -447,6 +467,7 @@ function returnToWorld(): void {
   mode = 'idle';
   selectedReward = null;
   clearSelection();
+  centerWorldOnCurrentNode();
 }
 
 function startPreparation(): void {
@@ -583,6 +604,7 @@ function startRewardSelection(): void {
 
 function closeBattleEndPopup(): void {
   battleEndPopupOpen = false;
+  worldScrollX = 0;
   if (levelUpPopups.length === 0) startRewardSelection();
 }
 
@@ -1196,6 +1218,23 @@ function isPopupOpen(): boolean {
   return levelUpPopups.length > 0;
 }
 
+canvas.addEventListener('wheel', (event) => {
+  if (phase !== 'world') return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = event.clientX - rect.left;
+  const my = event.clientY - rect.top;
+  const withinWorldMap = mx >= WORLD_VIEWPORT_X
+    && mx <= WORLD_VIEWPORT_X + WORLD_VIEWPORT_WIDTH
+    && my >= MAP_Y + 104
+    && my <= MAP_Y + H * TILE;
+  if (!withinWorldMap) return;
+
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  setWorldScroll(worldScrollX + delta);
+  event.preventDefault();
+}, { passive: false });
+
 canvas.addEventListener('mousemove', (event) => {
   const rect = canvas.getBoundingClientRect();
   pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -1341,12 +1380,17 @@ function drawWorldMap(): void {
   drawText('禁足樹海 探索路', MAP_X + 166, MAP_Y + 52, palette.goldBright, typography.title);
   drawText('古道と獣道を辿り、樹海の深部を目指す。', MAP_X + 104, MAP_Y + 88, palette.textMuted, typography.body);
 
-  const startX = MAP_X + 40;
+  const startX = WORLD_VIEWPORT_X + WORLD_ROUTE_PADDING - worldScrollX;
   const y = MAP_Y + 220;
-  const gap = (W * TILE - 80) / (worldNodes.length - 1);
+  const gap = WORLD_NODE_GAP;
   const branchIndex = worldNodes.findIndex((node) => node.type === 'battleChoice');
   const branchOffset = 48;
   const radius = 18;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(WORLD_VIEWPORT_X, MAP_Y + 108, WORLD_VIEWPORT_WIDTH, H * TILE - 132);
+  ctx.clip();
 
   const drawRoute = (fromX: number, fromY: number, toX: number, toY: number, active: boolean): void => {
     ctx.strokeStyle = palette.woodDark;
@@ -1450,6 +1494,19 @@ function drawWorldMap(): void {
     ? strongSelected ? strongY : normalY
     : y;
   drawText('現在地', currentX - 23, currentY + 52, palette.blueBright, typography.small);
+  ctx.restore();
+
+  const scrollBarY = MAP_Y + H * TILE - 18;
+  const thumbWidth = Math.max(48, WORLD_VIEWPORT_WIDTH * (WORLD_VIEWPORT_WIDTH / WORLD_CONTENT_WIDTH));
+  const thumbTravel = WORLD_VIEWPORT_WIDTH - thumbWidth;
+  const thumbX = WORLD_VIEWPORT_X + (maxWorldScroll() > 0 ? (worldScrollX / maxWorldScroll()) * thumbTravel : 0);
+  ctx.fillStyle = palette.panelInset;
+  ctx.fillRect(WORLD_VIEWPORT_X, scrollBarY, WORLD_VIEWPORT_WIDTH, 8);
+  ctx.strokeStyle = palette.wood;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(WORLD_VIEWPORT_X + 0.5, scrollBarY + 0.5, WORLD_VIEWPORT_WIDTH - 1, 7);
+  ctx.fillStyle = palette.gold;
+  ctx.fillRect(thumbX + 1, scrollBarY + 2, thumbWidth - 2, 4);
 }
 
 function drawWorldEventScreen(): void {
