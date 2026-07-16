@@ -15,7 +15,17 @@ export const consumableMasters: Record<string, ConsumableMaster> = {
     category: 'consumable',
     name: '上傷薬',
     effect: 'heal',
-    amount: 20,
+    amount: 30,
+    maxUses: 1,
+  },
+
+  hpDrop2: {
+    masterId: 'hpDrop2',
+    category: 'consumable',
+    name: '命の雫',
+    effect: 'statBoost',
+    stat: 'maxHp',
+    amount: 2,
     maxUses: 1,
   },
 
@@ -71,6 +81,16 @@ export const consumableMasters: Record<string, ConsumableMaster> = {
     effect: 'statBoost',
     stat: 'res',
     amount: 1,
+    maxUses: 1,
+  },
+
+  hpDrop5: {
+    masterId: 'hpDrop5',
+    category: 'consumable',
+    name: '命の大雫',
+    effect: 'statBoost',
+    stat: 'maxHp',
+    amount: 5,
     maxUses: 1,
   },
 

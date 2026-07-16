@@ -47,6 +47,7 @@ export const rewardTables: Record<`${RewardRarity}:${RewardCategory}`, RewardTab
   ],
   'uncommon:consumable': [
     { itemMasterId: 'highVulnerary', weight: 8 },
+    { itemMasterId: 'hpDrop2', weight: 5 },
     { itemMasterId: 'strDrop1', weight: 5 },
     { itemMasterId: 'magDrop1', weight: 5 },
     { itemMasterId: 'sklDrop1', weight: 5 },
@@ -55,6 +56,7 @@ export const rewardTables: Record<`${RewardRarity}:${RewardCategory}`, RewardTab
     { itemMasterId: 'resDrop1', weight: 5 },
   ],
   'rare:consumable': [
+    { itemMasterId: 'hpDrop5', weight: 5 },
     { itemMasterId: 'strDrop3', weight: 5 },
     { itemMasterId: 'magDrop3', weight: 5 },
     { itemMasterId: 'sklDrop3', weight: 5 },

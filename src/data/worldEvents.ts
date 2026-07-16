@@ -26,6 +26,7 @@ export const worldEventDefinitions: Record<WorldEventId, WorldEventDefinition> =
 export const worldEventIds = Object.keys(worldEventDefinitions) as WorldEventId[];
 
 export const statDropMasterIds = [
+  'hpDrop2',
   'strDrop1',
   'magDrop1',
   'sklDrop1',

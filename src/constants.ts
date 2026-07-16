@@ -1,4 +1,4 @@
-import type { StatKey } from './types';
+import type { BoostStatKey } from './types';
 
 export const TILE = 68;
 export const MAP_X = 28;
@@ -18,7 +18,8 @@ export const MAX_STRONG_PER_MAP = 1;
 export const REST_ACTION_MAX = 2;
 export const INVENTORY_SIZE = 4;
 
-export const statLabels: Record<StatKey, string> = {
+export const statLabels: Record<BoostStatKey, string> = {
+  maxHp: '最大HP',
   str: '力',
   mag: '魔力',
   skl: '技',

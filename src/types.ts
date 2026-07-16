@@ -3,6 +3,7 @@ export type Tile = 'plain' | 'forest' | 'wall';
 export type Phase = 'world' | 'preparation' | 'event' | 'battleChoice' | 'player' | 'enemy' | 'battleEnd' | 'reward' | 'rest' | 'result';
 export type Mode = 'idle' | 'move' | 'menu' | 'equip' | 'item' | 'targetAttack' | 'targetStrong' | 'confirmCombat';
 export type StatKey = 'str' | 'mag' | 'skl' | 'spd' | 'def' | 'res';
+export type BoostStatKey = 'maxHp' | StatKey;
 export type PlayerClassId = 'swordfighter' | 'lancer' | 'archer' | 'mage';
 export type ClassSkill = 'nimble' | 'defensiveStance' | 'fullDraw' | 'focus';
 export type AttackKind = 'normal' | 'strong';
@@ -40,7 +41,7 @@ export type Consumable = {
   effect: ConsumableEffect;
   amount: number;
   uses: number;
-  stat?: StatKey;
+  stat?: BoostStatKey;
 };
 
 export type Item = Weapon | Consumable;
