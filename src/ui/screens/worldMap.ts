@@ -5,7 +5,7 @@ import { palette, typography } from '../theme';
 
 export const WORLD_VIEWPORT_X = MAP_X + 12;
 export const WORLD_VIEWPORT_WIDTH = W * TILE - 24;
-const WORLD_NODE_GAP = 112;
+const WORLD_NODE_GAP = 75;
 const WORLD_ROUTE_PADDING = 56;
 const WORLD_CONTENT_WIDTH = WORLD_ROUTE_PADDING * 2 + (worldNodes.length - 1) * WORLD_NODE_GAP;
 
