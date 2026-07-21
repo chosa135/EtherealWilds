@@ -289,7 +289,7 @@ function buildRestButtons(view: ButtonViewState, actions: ButtonActions): Button
     ));
     add('戻る', () => actions.setRestMode('main'));
   } else {
-    add('休息：全員HP50%回復', actions.restHeal, view.players.every((unit) => unit.unavailable || unit.hp <= 0));
+    add('休息：全員HP30%回復', actions.restHeal, view.players.every((unit) => unit.unavailable || unit.hp <= 0));
     add('復帰：戦闘不能者を1人復帰', actions.restRevive, !view.players.some((unit) => unit.unavailable));
     add('鍛錬：味方全体EXP+30', actions.restTrain, view.players.every((unit) => unit.unavailable || unit.hp <= 0));
     add('修繕：武器を1つ50%回復', actions.startRepairSelection);

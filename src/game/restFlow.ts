@@ -5,7 +5,7 @@ import type { BattleUiState, RestUiState } from './uiState';
 
 export function healAtRest(players: Unit[]): void {
   players.filter((unit) => !unit.unavailable && unit.hp > 0).forEach((unit) => {
-    unit.hp = Math.min(unit.maxHp, unit.hp + Math.ceil(unit.maxHp * 0.5));
+    unit.hp = Math.min(unit.maxHp, unit.hp + Math.ceil(unit.maxHp * 0.3));
   });
 }
 
